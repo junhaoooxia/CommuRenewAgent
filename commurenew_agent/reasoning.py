@@ -9,11 +9,19 @@ from pydantic import BaseModel, Field
 from .models import DesignScheme, GenerationOutput, PerceptionInput, RetrievalResult, SchemeNodeScene
 
 
+SCHEME_FOCI = [
+    ("Scheme A - Public Space Vitality", "public space quality and social life"),
+    ("Scheme B - Mobility & Smart Logistics", "traffic organization and smart logistics"),
+    ("Scheme C - Interface Renewal & Activation", "building interface and frontage activation"),
+]
+
+
 class SceneSchema(BaseModel):
     node_name: str
     description: str
     desired_image_prompt: str
     reference_example_images: List[str] = Field(default_factory=list)
+    selected_representative_images: List[str] = Field(default_factory=list)
 
 
 class SchemeSchema(BaseModel):
@@ -25,13 +33,8 @@ class SchemeSchema(BaseModel):
     node_scenes: List[SceneSchema]
 
 
-class OutputSchema(BaseModel):
-    scheme_list: List[SchemeSchema]
-
-
-def _build_prompt(perception: PerceptionInput, retrieval: RetrievalResult) -> str:
-    def fmt_nodes(nodes):
-        # Trim long text bodies to keep token usage predictable.
+def _format_retrieved_nodes(retrieval: RetrievalResult) -> dict:
+    def fmt(nodes):
         return [
             {
                 "id": n.id,
@@ -43,14 +46,29 @@ def _build_prompt(perception: PerceptionInput, retrieval: RetrievalResult) -> st
             for n in nodes
         ]
 
+    return {
+        "retrieved_methods": fmt(retrieval.retrieved_methods),
+        "retrieved_policies": fmt(retrieval.retrieved_policies),
+        "retrieved_trend_strategies": fmt(retrieval.retrieved_trend_strategies),
+    }
+
+
+def _build_single_scheme_prompt(
+    perception: PerceptionInput,
+    retrieval: RetrievalResult,
+    scheme_name: str,
+    scheme_focus: str,
+) -> str:
     payload = {
-        # Structured payload helps model output strict machine-parseable JSON.
-        "task": "Generate exactly three distinct residential renewal schemes in JSON.",
+        "task": "Generate one residential renewal scheme in strict JSON.",
+        "scheme_name": scheme_name,
+        "scheme_focus": scheme_focus,
         "constraints": [
             "Focus on public space and outdoor environment renewal.",
-            "Explicitly cite referenced method IDs from retrieval.",
-            "Include policies and trend strategies where relevant.",
-            "Each scheme must have a distinct emphasis.",
+            "Use retrieval method IDs in referenced_methods.",
+            "For each node scene, select 1-2 best matching source images from perception.representative_images as selected_representative_images.",
+            "selected_representative_images entries must be exact paths from perception.representative_images.",
+            "Return exactly one scheme JSON object matching the output schema.",
         ],
         "perception": {
             "district_name": perception.district_name,
@@ -60,33 +78,23 @@ def _build_prompt(perception: PerceptionInput, retrieval: RetrievalResult) -> st
             "survey_summary": perception.survey_summary,
             "representative_images": perception.representative_images,
         },
-        "retrieval": {
-            "retrieved_methods": fmt_nodes(retrieval.retrieved_methods),
-            "retrieved_policies": fmt_nodes(retrieval.retrieved_policies),
-            "retrieved_trend_strategies": fmt_nodes(retrieval.retrieved_trend_strategies),
-        },
-        "output_schema": OutputSchema.model_json_schema(),
+        "retrieval": _format_retrieved_nodes(retrieval),
+        "output_schema": SchemeSchema.model_json_schema(),
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def generate_schemes_with_reasoning(
+def _generate_single_scheme_with_openai(
     perception: PerceptionInput,
     retrieval: RetrievalResult,
-    model: str = "gpt-4.1",
-) -> GenerationOutput:
-    # Serialize all constraints/context into a single prompt blob.
-    prompt = _build_prompt(perception, retrieval)
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        # Deterministic fallback keeps API usable in offline or keyless environments.
-        return _fallback_generation(perception, retrieval)
-
+    scheme_name: str,
+    scheme_focus: str,
+    model: str,
+) -> tuple[DesignScheme, str]:
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
-    # Request strict JSON so frontend/image backend can consume output directly.
+    prompt = _build_single_scheme_prompt(perception, retrieval, scheme_name, scheme_focus)
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     response = client.responses.create(
         model=model,
         input=[
@@ -99,45 +107,35 @@ def generate_schemes_with_reasoning(
         temperature=0.4,
     )
     text = response.output_text
-    # Validate model JSON against schema before returning to caller.
-    parsed = OutputSchema.model_validate_json(text)
-    return GenerationOutput(
-        scheme_list=[
-            DesignScheme(
-                name=s.name,
-                overall_concept=s.overall_concept,
-                key_strategies=s.key_strategies,
-                referenced_methods=s.referenced_methods,
-                referenced_example_images=s.referenced_example_images,
-                node_scenes=[
-                    SchemeNodeScene(
-                        node_name=n.node_name,
-                        description=n.description,
-                        desired_image_prompt=n.desired_image_prompt,
-                        reference_example_images=n.reference_example_images,
-                    )
-                    for n in s.node_scenes
-                ],
+    parsed = SchemeSchema.model_validate_json(text)
+
+    scheme = DesignScheme(
+        name=parsed.name,
+        overall_concept=parsed.overall_concept,
+        key_strategies=parsed.key_strategies,
+        referenced_methods=parsed.referenced_methods,
+        referenced_example_images=parsed.referenced_example_images,
+        node_scenes=[
+            SchemeNodeScene(
+                node_name=n.node_name,
+                description=n.description,
+                desired_image_prompt=n.desired_image_prompt,
+                reference_example_images=n.reference_example_images,
+                selected_representative_images=n.selected_representative_images,
             )
-            for s in parsed.scheme_list
+            for n in parsed.node_scenes
         ],
-        raw_response=text,
     )
+    return scheme, text
 
 
 def _fallback_generation(perception: PerceptionInput, retrieval: RetrievalResult) -> GenerationOutput:
-    # Reuse top retrieved methods/images as explicit references in fallback schemes.
     method_ids = [n.id for n in retrieval.retrieved_methods[:6]]
-    image_ids = [img for n in retrieval.retrieved_methods[:3] for img in n.images[:1]]
-
-    templates = [
-        ("Scheme A - Public Space Vitality", "public space quality and social life"),
-        ("Scheme B - Mobility & Smart Logistics", "traffic organization and smart logistics"),
-        ("Scheme C - Interface Renewal & Activation", "building interface and frontage activation"),
-    ]
+    kb_image_ids = [img for n in retrieval.retrieved_methods[:3] for img in n.images[:1]]
+    rep_images = perception.representative_images[:2]
 
     schemes = []
-    for name, focus in templates:
+    for name, focus in SCHEME_FOCI:
         schemes.append(
             DesignScheme(
                 name=name,
@@ -148,22 +146,49 @@ def _fallback_generation(perception: PerceptionInput, retrieval: RetrievalResult
                     "Introduce trend strategies where they improve operations and livability.",
                 ],
                 referenced_methods=method_ids,
-                referenced_example_images=image_ids,
+                referenced_example_images=kb_image_ids,
                 node_scenes=[
                     SchemeNodeScene(
                         node_name="Community Entrance",
                         description="Reorganize frontage, greenery, and slow traffic sharing.",
-                        desired_image_prompt="Concept rendering of upgraded residential entrance with greenery, clear pedestrian priority, integrated smart delivery lockers.",
-                        reference_example_images=image_ids[:2],
+                        desired_image_prompt="Edit the source node photo into an upgraded residential entrance with clearer pedestrian priority, planting and integrated smart-delivery elements.",
+                        reference_example_images=kb_image_ids[:2],
+                        selected_representative_images=rep_images[:1],
                     ),
                     SchemeNodeScene(
                         node_name="Central Open Space",
                         description="Create age-inclusive public activity area with shading and flexible seating.",
-                        desired_image_prompt="Landscape concept image of central plaza renewal with diverse seating, canopy shading, children's and elderly zones.",
-                        reference_example_images=image_ids[1:3],
+                        desired_image_prompt="Edit the source node photo into a central plaza renewal with diverse seating, canopy shading, children and elderly activity zones.",
+                        reference_example_images=kb_image_ids[1:3],
+                        selected_representative_images=rep_images[1:2],
                     ),
                 ],
             )
         )
 
     return GenerationOutput(scheme_list=schemes, raw_response=None)
+
+
+def generate_schemes_with_reasoning(
+    perception: PerceptionInput,
+    retrieval: RetrievalResult,
+    model: str = "gpt-4.1",
+) -> GenerationOutput:
+    """Generate three schemes iteratively (one call per scheme focus) for better controllability."""
+    if not os.getenv("OPENAI_API_KEY"):
+        return _fallback_generation(perception, retrieval)
+
+    scheme_list: List[DesignScheme] = []
+    raw_chunks: List[dict] = []
+    for scheme_name, scheme_focus in SCHEME_FOCI:
+        scheme, raw_text = _generate_single_scheme_with_openai(
+            perception=perception,
+            retrieval=retrieval,
+            scheme_name=scheme_name,
+            scheme_focus=scheme_focus,
+            model=model,
+        )
+        scheme_list.append(scheme)
+        raw_chunks.append({"scheme_name": scheme_name, "raw": raw_text})
+
+    return GenerationOutput(scheme_list=scheme_list, raw_response=json.dumps(raw_chunks, ensure_ascii=False))

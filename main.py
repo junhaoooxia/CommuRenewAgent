@@ -33,7 +33,11 @@ if __name__ == "__main__":
         representative_images=[],
     )
 
-    retrieval, output = generate_design_schemes(perception=perception)
+    retrieval, output = generate_design_schemes(
+        perception=perception,
+        # Set to True after configuring GEMINI_API_KEY/GOOGLE_API_KEY for img2img outputs.
+        generate_images=False,
+    )
 
     # Dump retrieval groups to verify RAG relevance during debugging.
     print("\n=== Retrieval ===")
