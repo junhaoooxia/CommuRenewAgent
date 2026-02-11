@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .embeddings import SimpleMultimodalEmbedder
+from .embeddings import EmbeddingConfig, get_embedder
 from .models import PerceptionInput, RetrievalResult
 from .vector_store import SQLiteVectorStore
 
@@ -11,8 +11,9 @@ def retrieve_relevant_nodes(
     perception: PerceptionInput,
     db_path: str | Path = "data/knowledge.db",
     top_k: int = 15,
+    embedding_backend: str = "llamaindex",
 ) -> RetrievalResult:
-    embedder = SimpleMultimodalEmbedder()
+    embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     query_emb = embedder.embed_query(perception.to_text_block(), perception.representative_images)
 
     store = SQLiteVectorStore(db_path=db_path)

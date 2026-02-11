@@ -8,9 +8,13 @@ from .reasoning import generate_schemes_with_reasoning
 from .retrieval import retrieve_relevant_nodes
 
 
-def index_knowledge_base(pdf_specs: list[dict], db_path: str | Path = "data/knowledge.db") -> int:
+def index_knowledge_base(
+    pdf_specs: list[dict],
+    db_path: str | Path = "data/knowledge.db",
+    embedding_backend: str = "llamaindex",
+) -> int:
     """Offline: parse PDFs and persist multimodal knowledge nodes + embeddings."""
-    return build_knowledge_base(pdf_specs=pdf_specs, db_path=db_path)
+    return build_knowledge_base(pdf_specs=pdf_specs, db_path=db_path, embedding_backend=embedding_backend)
 
 
 def generate_design_schemes(
@@ -18,9 +22,15 @@ def generate_design_schemes(
     db_path: str | Path = "data/knowledge.db",
     top_k: int = 15,
     model: str = "gpt-4.1",
+    embedding_backend: str = "llamaindex",
 ) -> tuple[dict, GenerationOutput]:
     """Online: retrieve relevant knowledge and generate three design schemes."""
-    retrieval = retrieve_relevant_nodes(perception=perception, db_path=db_path, top_k=top_k)
+    retrieval = retrieve_relevant_nodes(
+        perception=perception,
+        db_path=db_path,
+        top_k=top_k,
+        embedding_backend=embedding_backend,
+    )
     generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
     retrieval_payload = {
         "retrieved_methods": [node.__dict__ for node in retrieval.retrieved_methods],

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Iterable, List
 
-from .embeddings import SimpleMultimodalEmbedder
+from .embeddings import EmbeddingConfig, get_embedder
 from .models import KnowledgeNode
 from .vector_store import SQLiteVectorStore
 
@@ -61,8 +61,9 @@ def build_knowledge_base(
     pdf_specs: Iterable[dict],
     db_path: str | Path = "data/knowledge.db",
     nodes_dump_path: str | Path = "data/knowledge_nodes.jsonl",
+    embedding_backend: str = "llamaindex",
 ) -> int:
-    embedder = SimpleMultimodalEmbedder()
+    embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     store = SQLiteVectorStore(db_path=db_path)
 
     all_nodes: List[KnowledgeNode] = []

@@ -35,9 +35,8 @@ Each knowledge page/method is represented as a node:
 
 Embeddings are multimodal:
 
-- Text embedding from `main_text`
-- Image embeddings from node images
-- Weighted fusion (default text 0.7, image 0.3)
+- Text and image embeddings are generated with **LlamaIndex CLIP** (`llama_index.embeddings.clip.ClipEmbedding`)
+- Weighted fusion is applied (default text 0.7, image 0.3)
 
 The index is persisted to SQLite (`data/knowledge.db`) so it can be reused across sessions.
 
@@ -84,7 +83,7 @@ pdf_specs = [
     {"pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
 ]
 
-index_knowledge_base(pdf_specs)
+index_knowledge_base(pdf_specs, embedding_backend="llamaindex")
 
 perception = PerceptionInput(
     district_name="Example",
@@ -95,11 +94,13 @@ perception = PerceptionInput(
     representative_images=["inputs/site_plan.png", "inputs/node_photo_01.jpg"],
 )
 
-retrieval_payload, generation_output = generate_design_schemes(perception)
+retrieval_payload, generation_output = generate_design_schemes(
+    perception,
+    embedding_backend="llamaindex",
+)
 ```
 
 ## Notes
 
-- The included embedder is a deterministic lightweight fallback suitable for local testing and plumbing validation.
-- For production quality retrieval, swap `SimpleMultimodalEmbedder` with a stronger model stack (e.g., CLIP + dedicated text embedding model).
+- Default embedding backend is `llamaindex` (CLIP via LlamaIndex). You can switch to a deterministic local fallback using `embedding_backend="simple"` when calling the app APIs.
 - If `OPENAI_API_KEY` is set, reasoning can call an OpenAI model for richer scheme generation; otherwise a deterministic fallback generator is used.
