@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal, Sequence
 
 import numpy as np
-from llama_index.embeddings.clip import ClipEmbedding
 
 
 EmbeddingBackend = Literal["llamaindex", "simple"]
@@ -25,6 +25,15 @@ class LlamaIndexMultimodalEmbedder:
 
     def __init__(self, config: EmbeddingConfig | None = None) -> None:
         self.config = config or EmbeddingConfig()
+        try:
+            from llama_index.embeddings.clip import ClipEmbedding
+        except Exception as exc:  # pragma: no cover - dependency/runtime specific
+            raise ImportError(
+                "LlamaIndex CLIP backend requires `llama-index-embeddings-clip` and CLIP runtime deps. "
+                "Install extras (e.g. `pip install git+https://github.com/openai/CLIP.git torch`) "
+                "or use embedding_backend='simple'."
+            ) from exc
+
         self.clip = ClipEmbedding()
 
     def embed_text(self, text: str) -> np.ndarray:
@@ -117,4 +126,13 @@ def get_embedder(config: EmbeddingConfig | None = None):
     cfg = config or EmbeddingConfig()
     if cfg.backend == "simple":
         return SimpleMultimodalEmbedder(cfg)
-    return LlamaIndexMultimodalEmbedder(cfg)
+
+    try:
+        return LlamaIndexMultimodalEmbedder(cfg)
+    except ImportError as exc:
+        warnings.warn(
+            f"Falling back to simple embedding backend because llamaindex backend is unavailable: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return SimpleMultimodalEmbedder(EmbeddingConfig(dim=cfg.dim, text_weight=cfg.text_weight, image_weight=cfg.image_weight, backend="simple"))

@@ -102,5 +102,8 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 ## Notes
 
-- Default embedding backend is `llamaindex` (CLIP via LlamaIndex). You can switch to a deterministic local fallback using `embedding_backend="simple"` when calling the app APIs.
+- Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
 - If `OPENAI_API_KEY` is set, reasoning can call an OpenAI model for richer scheme generation; otherwise a deterministic fallback generator is used.
+
+
+> If you want true CLIP embeddings via LlamaIndex, install extra runtime deps: `torch` and OpenAI CLIP (`pip install git+https://github.com/openai/CLIP.git`).
