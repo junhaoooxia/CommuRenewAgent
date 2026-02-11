@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from .knowledge_ingestion import build_knowledge_base
+from .models import GenerationOutput, PerceptionInput
+from .reasoning import generate_schemes_with_reasoning
+from .retrieval import retrieve_relevant_nodes
+
+
+def index_knowledge_base(pdf_specs: list[dict], db_path: str | Path = "data/knowledge.db") -> int:
+    """Offline: parse PDFs and persist multimodal knowledge nodes + embeddings."""
+    return build_knowledge_base(pdf_specs=pdf_specs, db_path=db_path)
+
+
+def generate_design_schemes(
+    perception: PerceptionInput,
+    db_path: str | Path = "data/knowledge.db",
+    top_k: int = 15,
+    model: str = "gpt-4.1",
+) -> tuple[dict, GenerationOutput]:
+    """Online: retrieve relevant knowledge and generate three design schemes."""
+    retrieval = retrieve_relevant_nodes(perception=perception, db_path=db_path, top_k=top_k)
+    generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
+    retrieval_payload = {
+        "retrieved_methods": [node.__dict__ for node in retrieval.retrieved_methods],
+        "retrieved_policies": [node.__dict__ for node in retrieval.retrieved_policies],
+        "retrieved_trend_strategies": [node.__dict__ for node in retrieval.retrieved_trend_strategies],
+    }
+    return retrieval_payload, generated
