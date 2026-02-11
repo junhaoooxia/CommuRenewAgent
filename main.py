@@ -17,6 +17,7 @@ if __name__ == "__main__":
 
     existing_pdfs = [spec for spec in pdf_specs if Path(spec["pdf_path"]).exists()]
     if existing_pdfs:
+        # Build/update persistent KB only when source PDFs are present.
         count = index_knowledge_base(existing_pdfs)
         print(f"Indexed {count} nodes")
     else:
@@ -32,11 +33,17 @@ if __name__ == "__main__":
         representative_images=[],
     )
 
-    retrieval, output = generate_design_schemes(perception=perception)
+    retrieval, output = generate_design_schemes(
+        perception=perception,
+        # Set to True after configuring GEMINI_API_KEY/GOOGLE_API_KEY for img2img outputs.
+        generate_images=False,
+    )
 
+    # Dump retrieval groups to verify RAG relevance during debugging.
     print("\n=== Retrieval ===")
     print(json.dumps(retrieval, ensure_ascii=False, indent=2))
 
+    # Dump machine-parseable scheme payload for downstream UI/image generation steps.
     print("\n=== Generated Schemes ===")
     print(
         json.dumps(

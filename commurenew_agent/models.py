@@ -26,6 +26,7 @@ class PerceptionInput:
     representative_images: List[str] = field(default_factory=list)
 
     def to_text_block(self) -> str:
+        # Flatten project context into a single textual query prompt for embedding/retrieval.
         return "\n".join(
             [
                 f"District: {self.district_name}",
@@ -61,6 +62,8 @@ class SchemeNodeScene:
     description: str
     desired_image_prompt: str
     reference_example_images: List[str]
+    selected_representative_images: List[str] = field(default_factory=list)
+    generated_images: List[str] = field(default_factory=list)
 
 
 @dataclass
