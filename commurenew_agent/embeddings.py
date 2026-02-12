@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import mimetypes
+import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +35,7 @@ class OpenAIQwenMultimodalEmbedder:
 
         from openai import OpenAI
 
-        self.openai_client = OpenAI()
+        self.openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
         try:
             import dashscope
@@ -65,6 +66,7 @@ class OpenAIQwenMultimodalEmbedder:
     def _call_qwen_embedding(self, image_payload: str):
         # Try explicit dimension first to align vector space with OpenAI text embeddings.
         resp = self.dashscope.MultiModalEmbedding.call(
+            api_key=os.getenv("DASHSCOPE_API_KEY"),
             model=self.config.qwen_image_model_name,
             input=[{"image": image_payload}],
             dimension=self.config.dim,
@@ -74,6 +76,7 @@ class OpenAIQwenMultimodalEmbedder:
 
         # Some SDK versions may not accept `dimension`; retry without it.
         return self.dashscope.MultiModalEmbedding.call(
+            api_key=os.getenv("DASHSCOPE_API_KEY"),
             model=self.config.qwen_image_model_name,
             input=[{"image": image_payload}],
         )
