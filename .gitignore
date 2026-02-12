@@ -2,3 +2,4 @@ data
 knowledge
 __pycache__/*.pyc
 inputs
+raw_data
