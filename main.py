@@ -92,7 +92,7 @@ if __name__ == "__main__":
         problem_summary="Public activity spaces are insufficient, pedestrian-vehicle conflicts are frequent, and facilities are unevenly distributed.",
         constraints_and_needs="Need low-cost phased renewal, maintain fire access, preserve mature trees, and satisfy elderly + child-friendly use.",
         survey_summary="Residents prioritize safer walking, more shaded seating, and better package/delivery management.",
-        representative_images=[],
+        representative_images=["inputs/centerGround.JPG", "inputs/masterPlan.png"],
     )
 
     retrieval, output = generate_design_schemes(
