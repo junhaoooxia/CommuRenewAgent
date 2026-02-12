@@ -23,10 +23,10 @@ def generate_design_schemes(
     perception: PerceptionInput,
     db_path: str | Path = "data/knowledge.db",
     top_k: int = 15,
-    model: str = "gpt-4.1",
+    model: str = "gpt-5.2",
     embedding_backend: str = "llamaindex",
     generate_images: bool = False,
-    image_model: str = "gemini-2.5-flash-image-preview",
+    image_model: str = "gemini-3-pro-image-preview",
     image_output_dir: str | Path = "data/generated_images",
 ) -> tuple[dict, GenerationOutput]:
     """Online: retrieve relevant knowledge and generate three design schemes."""

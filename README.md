@@ -6,27 +6,21 @@ This repository provides a modular pipeline that:
 
 1. Builds a persistent multimodal knowledge base from PDF documents (policy, design methods, trend strategies).
 2. Retrieves relevant knowledge nodes using project-specific perception inputs (text + images).
-<<<<<<< HEAD
 3. Generates **three distinct renewal design schemes** in machine-parseable JSON (iterative: one run per scheme focus).
 4. Optionally performs image-to-image editing per node scene via Gemini to produce updated concept images.
-=======
-3. Generates **three distinct renewal design schemes** in machine-parseable JSON.
-4. Optionally turns node-level scene prompts into generated concept images.
->>>>>>> main
+3. Generates **three distinct renewal design schemes** in machine-parseable JSON (iterative: one run per scheme focus).
+4. Optionally performs image-to-image editing per node scene via Gemini to produce updated concept images.
+
 
 ## Project structure
 
 - `commurenew_agent/knowledge_ingestion.py`: PDF parsing, image extraction, node construction, embedding + persistent indexing.
 - `commurenew_agent/retrieval.py`: multimodal query embedding and top-k similarity retrieval.
-<<<<<<< HEAD
 - `commurenew_agent/reasoning.py`: structured prompt + multimodal LLM reasoning into three schemes (iterative single-scheme generation loop).
 - `commurenew_agent/image_generation.py`: optional Gemini img2img helper (using selected representative source images).
-=======
-- `commurenew_agent/reasoning.py`: structured prompt + multimodal LLM reasoning into three schemes.
-- `commurenew_agent/image_generation.py`: optional image generation helper.
->>>>>>> main
-- `commurenew_agent/app.py`: end-to-end orchestration.
-- `main.py`: simple runnable example.
+- `commurenew_agent/reasoning.py`: structured prompt + multimodal LLM reasoning into three schemes (iterative single-scheme generation loop).
+- `commurenew_agent/image_generation.py`: optional Gemini img2img helper (using selected representative source images).
+
 
 ## Data model
 
@@ -79,11 +73,9 @@ This will:
 - Produce JSON output with:
   - `scheme_list` (3 schemes)
   - per-scheme references to methods/images
-<<<<<<< HEAD
   - per-node scene prompts + selected source images (`selected_representative_images`) for downstream img2img generation
-=======
-  - per-node scene prompts for downstream image generation
->>>>>>> main
+  - per-node scene prompts + selected source images (`selected_representative_images`) for downstream img2img generation
+
 
 ## Core API
 
@@ -111,22 +103,21 @@ perception = PerceptionInput(
 retrieval_payload, generation_output = generate_design_schemes(
     perception,
     embedding_backend="llamaindex",
-<<<<<<< HEAD
+    generate_images=True,
+    image_model="gemini-3-pro-image-preview",
     generate_images=True,
     image_model="gemini-2.5-flash-image-preview",
-=======
->>>>>>> main
 )
 ```
 
 ## Notes
 
 - Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
-<<<<<<< HEAD
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
-=======
->>>>>>> main
+- If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
+- Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - If `OPENAI_API_KEY` is set, reasoning can call an OpenAI model for richer scheme generation; otherwise a deterministic fallback generator is used.
+
 
 
 > If you want true CLIP embeddings via LlamaIndex, install extra runtime deps: `torch` and OpenAI CLIP (`pip install git+https://github.com/openai/CLIP.git`).
