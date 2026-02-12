@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import mimetypes
 import os
 import warnings
@@ -82,11 +83,46 @@ class OpenAIQwenMultimodalEmbedder:
         )
 
     @staticmethod
-    def _to_qwen_image_payload(path: Path) -> str:
-        # Local images are converted to data-URI so the embedding API can read them directly.
-        mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
-        encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
-        return f"data:{mime};base64,{encoded}"
+    def _to_qwen_image_payload(path: Path, max_kb: int = 5070) -> str:
+        # Local images are converted to data-URI and constrained under Qwen input limit.
+        raw = path.read_bytes()
+        max_bytes = max_kb * 1024
+        if len(raw) <= max_bytes:
+            mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+            return f"data:{mime};base64,{base64.b64encode(raw).decode('utf-8')}"
+
+        try:
+            from PIL import Image
+        except Exception as exc:  # pragma: no cover
+            raise ImportError("Pillow is required for automatic image resizing before Qwen embedding") from exc
+
+        img = Image.open(path)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+
+        quality = 92
+        current = img
+        while True:
+            buf = io.BytesIO()
+            save_img = current.convert("RGB") if current.mode != "RGB" else current
+            save_img.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= max_bytes:
+                return f"data:image/jpeg;base64,{base64.b64encode(data).decode('utf-8')}"
+
+            # First reduce quality, then reduce resolution proportionally to converge near size cap.
+            if quality > 70:
+                quality -= 8
+                continue
+
+            ratio = (max_bytes / max(len(data), 1)) ** 0.5
+            ratio *= 0.98
+            new_w = max(1, int(current.width * ratio))
+            new_h = max(1, int(current.height * ratio))
+            if new_w == current.width and new_h == current.height:
+                new_w = max(1, current.width - 1)
+                new_h = max(1, current.height - 1)
+            current = current.resize((new_w, new_h))
 
     def fuse(self, text_embedding: np.ndarray, image_embeddings: Sequence[np.ndarray]) -> np.ndarray:
         if image_embeddings:
