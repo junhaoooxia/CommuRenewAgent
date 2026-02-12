@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import mimetypes
 import os
 from pathlib import Path
 
@@ -9,7 +10,7 @@ def edit_image_with_gemini_nanobanana(
     prompt: str,
     source_image_path: str | Path,
     output_path: str | Path,
-    model: str = "gemini-2.5-flash-image-preview",
+    model: str = "gemini-3-pro-image-preview",
 ) -> str:
     """Image-to-image editing via Gemini ("nanobanana" style workflow).
 
@@ -31,18 +32,23 @@ def edit_image_with_gemini_nanobanana(
 
     client = genai.Client(api_key=api_key)
     img_bytes = source_image_path.read_bytes()
+    mime_type = mimetypes.guess_type(source_image_path.name)[0] or "image/png"
 
     response = client.models.generate_content(
         model=model,
         contents=[
             types.Part.from_text(text=prompt),
-            types.Part.from_bytes(data=img_bytes, mime_type="image/png"),
+            types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
         ],
         config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
     )
 
     image_bytes = None
-    for part in (response.candidates[0].content.parts if response.candidates else []):
+    parts = getattr(response, "parts", None)
+    if not parts and getattr(response, "candidates", None):
+        parts = response.candidates[0].content.parts
+
+    for part in parts or []:
         if getattr(part, "inline_data", None) and getattr(part.inline_data, "data", None):
             image_bytes = base64.b64decode(part.inline_data.data)
             break

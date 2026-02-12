@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
 import os
+from pathlib import Path
 from typing import List
 
 from pydantic import BaseModel, Field
@@ -76,12 +79,25 @@ def _build_single_scheme_prompt(
             "problem_summary": perception.problem_summary,
             "constraints_and_needs": perception.constraints_and_needs,
             "survey_summary": perception.survey_summary,
-            "representative_images": perception.representative_images,
         },
         "retrieval": _format_retrieved_nodes(retrieval),
         "output_schema": SchemeSchema.model_json_schema(),
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _build_multimodal_user_input(prompt: str, representative_images: List[str]) -> List[dict]:
+    # Keep image paths out of the textual prompt and pass perception images via multimodal input parts.
+    content: List[dict] = [{"type": "input_text", "text": prompt}]
+    for idx, image_path in enumerate(representative_images, start=1):
+        p = Path(image_path)
+        if not p.exists():
+            continue
+        mime_type = mimetypes.guess_type(p.name)[0] or "image/png"
+        # Give the model an explicit path label adjacent to each image so it can return exact selections.
+        content.append({"type": "input_text", "text": f"Representative image {idx} path: {image_path}"})
+        content.append({"type": "input_image", "image_url": f"data:{mime_type};base64,{base64.b64encode(p.read_bytes()).decode('utf-8')}"})
+    return content
 
 
 def _generate_single_scheme_with_openai(
@@ -102,7 +118,10 @@ def _generate_single_scheme_with_openai(
                 "role": "system",
                 "content": "You are an urban renewal planning assistant. Output strict JSON only.",
             },
-            {"role": "user", "content": prompt},
+            {
+                "role": "user",
+                "content": _build_multimodal_user_input(prompt, perception.representative_images),
+            },
         ],
         temperature=0.4,
     )
@@ -172,7 +191,7 @@ def _fallback_generation(perception: PerceptionInput, retrieval: RetrievalResult
 def generate_schemes_with_reasoning(
     perception: PerceptionInput,
     retrieval: RetrievalResult,
-    model: str = "gpt-4.1",
+    model: str = "gpt-5.2",
 ) -> GenerationOutput:
     """Generate three schemes iteratively (one call per scheme focus) for better controllability."""
     if not os.getenv("OPENAI_API_KEY"):
