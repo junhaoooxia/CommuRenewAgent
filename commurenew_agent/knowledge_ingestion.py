@@ -10,6 +10,9 @@ from .models import KnowledgeNode
 from .vector_store import SQLiteVectorStore
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
 def slugify(text: str) -> str:
     # Normalize arbitrary titles into stable id-safe tokens for filenames/keys.
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_") or "untitled"
@@ -66,10 +69,11 @@ def extract_nodes_from_pdf(
 def _resolve_image_path(image_path: str, base_dir: Path) -> str:
     # JSONL may use Windows-style separators; normalize to local filesystem format.
     normalized = Path(image_path.replace("\\", "/"))
-    # Keep absolute paths as-is; relative paths become <jsonl_dir>/ref/<original_relative_path>.
+    # Keep absolute paths as-is; relative paths are resolved under <repo_root>/ref/<original_relative_path>.
     if normalized.is_absolute():
         return str(normalized)
-    return str((base_dir / "ref" / normalized).resolve())
+    ref_root = PROJECT_ROOT / "ref"
+    return str((ref_root / normalized).resolve())
 
 
 def extract_nodes_from_jsonl(
