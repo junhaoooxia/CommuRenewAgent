@@ -11,7 +11,7 @@ def retrieve_relevant_nodes(
     perception: PerceptionInput,
     db_path: str | Path = "data/knowledge.db",
     top_k: int = 15,
-    embedding_backend: str = "llamaindex",
+    embedding_backend: str = "openai_qwen",
 ) -> RetrievalResult:
     # Encode both site text and representative images into a single query vector.
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))

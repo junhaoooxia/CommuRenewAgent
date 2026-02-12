@@ -134,7 +134,7 @@ def build_knowledge_base(
     source_specs: Iterable[dict],
     db_path: str | Path = "data/knowledge.db",
     nodes_dump_path: str | Path = "data/knowledge_nodes.jsonl",
-    embedding_backend: str = "llamaindex",
+    embedding_backend: str = "openai_qwen",
 ) -> int:
     # Build embedder once to avoid repeated model initialization overhead.
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))

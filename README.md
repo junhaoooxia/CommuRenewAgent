@@ -85,7 +85,7 @@ source_specs = [
     {"source": "jsonl", "jsonl_path": "knowledge/trend_strategy.jsonl", "type": "trend_strategy"},
 ]
 
-index_knowledge_base(source_specs, embedding_backend="llamaindex")
+index_knowledge_base(source_specs, embedding_backend="openai_qwen")
 
 perception = PerceptionInput(
     district_name="Example",
@@ -98,7 +98,7 @@ perception = PerceptionInput(
 
 retrieval_payload, generation_output = generate_design_schemes(
     perception,
-    embedding_backend="llamaindex",
+    embedding_backend="openai_qwen",
     generate_images=True,
     image_model="gemini-3-pro-image-preview",
 )
@@ -106,10 +106,11 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 ## Notes
 
-- Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
-- CLIP text encoder context is fixed and short (77 tokens). The ingestion/retrieval embedder now auto-chunks long text and averages chunk embeddings, so long Chinese policy/method pages no longer crash with `too long for context length`.
+- Default embedding backend is `openai_qwen`: OpenAI `text-embedding-3-small` (1536-d) for text + Qwen vision embedding (`qwen3-vl-embedding`) configured to 1536-d for image, so text/image vectors are dimension-aligned before fusion. You can switch to `llamaindex_zh` or `llamaindex`, or force fallback with `embedding_backend="simple"`.
+- `llamaindex` backend still uses CLIP text encoder (77-token limit) with built-in chunk+average fallback. `llamaindex_zh` uses `BAAI/bge-m3` text + CLIP image as an alternative when OpenAI/Qwen credentials are unavailable.
 - JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<repo_root>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../CommuRenewAgent/ref/design_method_images/a.jpg`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
+- For `openai_qwen` embeddings, set `OPENAI_API_KEY` (text) and `DASHSCOPE_API_KEY` (Qwen vision embedding).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
 

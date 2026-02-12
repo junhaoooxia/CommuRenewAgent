@@ -12,7 +12,7 @@ from .retrieval import retrieve_relevant_nodes
 def index_knowledge_base(
     source_specs: list[dict],
     db_path: str | Path = "data/knowledge.db",
-    embedding_backend: str = "llamaindex",
+    embedding_backend: str = "openai_qwen",
 ) -> int:
     """Offline: parse PDFs/JSONL and persist multimodal knowledge nodes + embeddings."""
     # Offline entrypoint: called when knowledge sources change.
@@ -24,7 +24,7 @@ def generate_design_schemes(
     db_path: str | Path = "data/knowledge.db",
     top_k: int = 15,
     model: str = "gpt-5.2",
-    embedding_backend: str = "llamaindex",
+    embedding_backend: str = "openai_qwen",
     generate_images: bool = False,
     image_model: str = "gemini-3-pro-image-preview",
     image_output_dir: str | Path = "data/generated_images",
