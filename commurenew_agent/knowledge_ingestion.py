@@ -63,13 +63,13 @@ def extract_nodes_from_pdf(
     return nodes
 
 
-def _resolve_image_path(image_path: str) -> str:
+def _resolve_image_path(image_path: str, base_dir: Path) -> str:
     # JSONL may use Windows-style separators; normalize to local filesystem format.
     normalized = Path(image_path.replace("\\", "/"))
-    # Prefix relative paths with `ref/` exactly as requested by downstream dataset layout.
+    # Keep absolute paths as-is; relative paths become <jsonl_dir>/ref/<original_relative_path>.
     if normalized.is_absolute():
         return str(normalized)
-    return str(Path("ref") / normalized)
+    return str((base_dir / "ref" / normalized).resolve())
 
 
 def extract_nodes_from_jsonl(
@@ -78,6 +78,7 @@ def extract_nodes_from_jsonl(
     metadata: dict | None = None,
 ) -> List[KnowledgeNode]:
     jsonl_path = Path(jsonl_path)
+    base_dir = jsonl_path.parent
     nodes: List[KnowledgeNode] = []
 
     with jsonl_path.open("r", encoding="utf-8") as f:
@@ -92,7 +93,7 @@ def extract_nodes_from_jsonl(
             title = str(record.get("title") or f"{jsonl_path.stem}_{record_id}")
             main_text = str(record.get("main_text") or "")
             raw_images = record.get("images") or []
-            images = [_resolve_image_path(img) for img in raw_images if str(img).strip()]
+            images = [_resolve_image_path(img, base_dir) for img in raw_images if str(img).strip()]
 
             # Prefix id with file stem + type so different files/records avoid key collision.
             node = KnowledgeNode(

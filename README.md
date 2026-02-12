@@ -108,7 +108,7 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 - Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
 - CLIP text encoder context is fixed and short (77 tokens). The ingestion/retrieval embedder now auto-chunks long text and averages chunk embeddings, so long Chinese policy/method pages no longer crash with `too long for context length`.
-- JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and prefixed to `ref/...` (e.g. `design_method_images\a.jpg` -> `ref/design_method_images/a.jpg`).
+- JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<jsonl_dir>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../knowledge/ref/design_method_images/a.jpg`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
