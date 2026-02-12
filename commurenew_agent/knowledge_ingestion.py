@@ -47,7 +47,7 @@ def extract_nodes_from_pdf(
             ext = base_img.get("ext", "png")
             image_path = image_dir / f"p{page_index+1}_img{img_no+1}.{ext}"
             image_path.write_bytes(base_img["image"])
-            # Store absolute/relative path string so downstream retriever can surface references.
+            # Store path string so downstream retriever can surface references.
             page_images.append(str(image_path))
 
         node = KnowledgeNode(
@@ -56,15 +56,77 @@ def extract_nodes_from_pdf(
             title=title,
             main_text=page.get_text("text").strip(),
             images=page_images,
-            metadata={**(metadata or {}), "pdf": str(pdf_path), "page": page_index + 1},
+            metadata={**(metadata or {}), "source": "pdf", "pdf": str(pdf_path), "page": page_index + 1},
         )
         # One node per PDF page keeps traceability clear during QA.
         nodes.append(node)
     return nodes
 
 
+def _resolve_image_path(image_path: str, base_dir: Path) -> str:
+    # JSONL may use Windows-style separators; normalize to local filesystem format.
+    normalized = Path(image_path.replace("\\", "/"))
+    if normalized.is_absolute():
+        return str(normalized)
+    return str((base_dir / normalized).resolve())
+
+
+def extract_nodes_from_jsonl(
+    jsonl_path: str | Path,
+    default_type: str = "other",
+    metadata: dict | None = None,
+) -> List[KnowledgeNode]:
+    jsonl_path = Path(jsonl_path)
+    base_dir = jsonl_path.parent
+    nodes: List[KnowledgeNode] = []
+
+    with jsonl_path.open("r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            raw = line.strip()
+            if not raw:
+                continue
+            record = json.loads(raw)
+
+            record_id = str(record.get("id", line_no)).strip() or str(line_no)
+            record_type = str(record.get("type") or default_type)
+            title = str(record.get("title") or f"{jsonl_path.stem}_{record_id}")
+            main_text = str(record.get("main_text") or "")
+            raw_images = record.get("images") or []
+            images = [_resolve_image_path(img, base_dir) for img in raw_images if str(img).strip()]
+
+            # Prefix id with file stem + type so different files/records avoid key collision.
+            node = KnowledgeNode(
+                id=f"{jsonl_path.stem}_{record_type}_{record_id}",
+                type=record_type,
+                title=title,
+                main_text=main_text,
+                images=images,
+                metadata={**(metadata or {}), "source": "jsonl", "jsonl": str(jsonl_path), "line": line_no},
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _collect_nodes_from_spec(spec: dict) -> List[KnowledgeNode]:
+    source_kind = spec.get("source")
+    if source_kind == "jsonl" or "jsonl_path" in spec:
+        return extract_nodes_from_jsonl(
+            jsonl_path=spec["jsonl_path"],
+            default_type=spec.get("type", "other"),
+            metadata=spec.get("metadata", {}),
+        )
+
+    return extract_nodes_from_pdf(
+        pdf_path=spec["pdf_path"],
+        node_type=spec.get("type", "other"),
+        output_image_dir=spec.get("output_image_dir", "data/extracted_images"),
+        metadata=spec.get("metadata", {}),
+    )
+
+
 def build_knowledge_base(
-    pdf_specs: Iterable[dict],
+    source_specs: Iterable[dict],
     db_path: str | Path = "data/knowledge.db",
     nodes_dump_path: str | Path = "data/knowledge_nodes.jsonl",
     embedding_backend: str = "llamaindex",
@@ -74,14 +136,8 @@ def build_knowledge_base(
     store = SQLiteVectorStore(db_path=db_path)
 
     all_nodes: List[KnowledgeNode] = []
-    for spec in pdf_specs:
-        # Each spec maps one source PDF into typed nodes (policy/method/trend).
-        nodes = extract_nodes_from_pdf(
-            pdf_path=spec["pdf_path"],
-            node_type=spec.get("type", "other"),
-            output_image_dir=spec.get("output_image_dir", "data/extracted_images"),
-            metadata=spec.get("metadata", {}),
-        )
+    for spec in source_specs:
+        nodes = _collect_nodes_from_spec(spec)
         all_nodes.extend(nodes)
 
     for node in all_nodes:

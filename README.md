@@ -4,14 +4,14 @@ Multimodal RAG system for **residential district renewal design**.
 
 This repository provides a modular pipeline that:
 
-1. Builds a persistent multimodal knowledge base from PDF documents (policy, design methods, trend strategies).
+1. Builds a persistent multimodal knowledge base from PDF documents and JSONL datasets (policy, design methods, trend strategies).
 2. Retrieves relevant knowledge nodes using project-specific perception inputs (text + images).
 3. Generates **three distinct renewal design schemes** in machine-parseable JSON (iterative: one run per scheme focus).
 4. Optionally performs image-to-image editing per node scene via Gemini to produce updated concept images.
 
 ## Project structure
 
-- `commurenew_agent/knowledge_ingestion.py`: PDF parsing, image extraction, node construction, embedding + persistent indexing.
+- `commurenew_agent/knowledge_ingestion.py`: PDF/JSONL parsing, image extraction/path normalization, node construction, embedding + persistent indexing.
 - `commurenew_agent/retrieval.py`: multimodal query embedding and top-k similarity retrieval.
 - `commurenew_agent/reasoning.py`: structured prompt + multimodal LLM reasoning into three schemes (iterative single-scheme generation loop).
 - `commurenew_agent/image_generation.py`: optional Gemini img2img helper (using selected representative source images).
@@ -48,13 +48,15 @@ The index is persisted to SQLite (`data/knowledge.db`) so it can be reused acros
 pip install -r requirements.txt
 ```
 
-### 2) Add PDFs
+### 2) Add knowledge sources
 
-Put your source PDFs under `knowledge/` (or provide absolute paths in code):
+Put your source files under `knowledge/` and/or `raw_data/` (or provide absolute paths in code):
 
 - `knowledge/policies.pdf`
 - `knowledge/design_methods.pdf`
 - `knowledge/trend_strategies.pdf`
+- `raw_data/design_method.jsonl`
+- `raw_data/trend_strategy.jsonl`
 
 ### 3) Run example
 
@@ -64,7 +66,7 @@ python main.py
 
 This will:
 
-- Index available PDFs (offline stage)
+- Index available PDF + JSONL sources (offline stage)
 - Run retrieval with sample perception input (online stage)
 - Produce JSON output with:
   - `scheme_list` (3 schemes)
@@ -77,13 +79,15 @@ This will:
 from commurenew_agent.app import index_knowledge_base, generate_design_schemes
 from commurenew_agent.models import PerceptionInput
 
-pdf_specs = [
-    {"pdf_path": "knowledge/policies.pdf", "type": "policy"},
-    {"pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
-    {"pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
+source_specs = [
+    {"source": "pdf", "pdf_path": "knowledge/policies.pdf", "type": "policy"},
+    {"source": "pdf", "pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
+    {"source": "pdf", "pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
+    {"source": "jsonl", "jsonl_path": "raw_data/design_method.jsonl", "type": "design_method"},
+    {"source": "jsonl", "jsonl_path": "raw_data/trend_strategy.jsonl", "type": "trend_strategy"},
 ]
 
-index_knowledge_base(pdf_specs, embedding_backend="llamaindex")
+index_knowledge_base(source_specs, embedding_backend="llamaindex")
 
 perception = PerceptionInput(
     district_name="Example",
@@ -106,6 +110,7 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 - Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
 - CLIP text encoder context is fixed and short (77 tokens). The ingestion/retrieval embedder now auto-chunks long text and averages chunk embeddings, so long Chinese policy/method pages no longer crash with `too long for context length`.
+- JSONL ingestion supports records with `id/type/title/main_text/images`; image paths are normalized (including Windows `\` separators) relative to the JSONL file directory.
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 

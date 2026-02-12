@@ -10,13 +10,13 @@ from .retrieval import retrieve_relevant_nodes
 
 
 def index_knowledge_base(
-    pdf_specs: list[dict],
+    source_specs: list[dict],
     db_path: str | Path = "data/knowledge.db",
     embedding_backend: str = "llamaindex",
 ) -> int:
-    """Offline: parse PDFs and persist multimodal knowledge nodes + embeddings."""
+    """Offline: parse PDFs/JSONL and persist multimodal knowledge nodes + embeddings."""
     # Offline entrypoint: called when source PDFs change.
-    return build_knowledge_base(pdf_specs=pdf_specs, db_path=db_path, embedding_backend=embedding_backend)
+    return build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
 
 
 def generate_design_schemes(

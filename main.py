@@ -54,22 +54,36 @@ def _save_output(retrieval: dict, output_dict: dict, logger: logging.Logger) -> 
 if __name__ == "__main__":
     logger = _setup_logger()
 
-    logger.info("Step 1/4: Preparing PDF specs for offline indexing")
-    pdf_specs = [
-        {"pdf_path": "knowledge/policies.pdf", "type": "policy", "metadata": {"city": "demo_city"}},
-        {"pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
-        {"pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
+    logger.info("Step 1/4: Preparing knowledge source specs (PDF + JSONL)")
+    source_specs = [
+        {"source": "pdf", "pdf_path": "knowledge/policies.pdf", "type": "policy", "metadata": {"city": "demo_city"}},
+        {"source": "pdf", "pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
+        {"source": "pdf", "pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
+        {"source": "jsonl", "jsonl_path": "raw_data/design_method.jsonl", "type": "design_method"},
+        {"source": "jsonl", "jsonl_path": "raw_data/trend_strategy.jsonl", "type": "trend_strategy"},
     ]
 
-    existing_pdfs = [spec for spec in pdf_specs if Path(spec["pdf_path"]).exists()]
-    logger.info("Detected %d/%d PDF files", len(existing_pdfs), len(pdf_specs))
+    existing_sources = []
+    for spec in source_specs:
+        key = "pdf_path" if spec.get("source") == "pdf" else "jsonl_path"
+        if Path(spec[key]).exists():
+            existing_sources.append(spec)
 
-    if existing_pdfs:
+    detected_pdf_count = sum(1 for s in existing_sources if s.get("source") == "pdf")
+    detected_jsonl_count = sum(1 for s in existing_sources if s.get("source") == "jsonl")
+    logger.info(
+        "Detected sources: pdf=%d, jsonl=%d, total=%d",
+        detected_pdf_count,
+        detected_jsonl_count,
+        len(existing_sources),
+    )
+
+    if existing_sources:
         logger.info("Step 2/4: Running knowledge indexing")
-        count = index_knowledge_base(existing_pdfs)
+        count = index_knowledge_base(existing_sources)
         logger.info("Indexed %d nodes", count)
     else:
-        logger.warning("No PDFs found under ./knowledge. Skipping indexing.")
+        logger.warning("No sources found under ./knowledge or ./raw_data. Skipping indexing.")
 
     logger.info("Step 3/4: Building perception input and running retrieval + reasoning")
     perception = PerceptionInput(
@@ -78,7 +92,7 @@ if __name__ == "__main__":
         problem_summary="Public activity spaces are insufficient, pedestrian-vehicle conflicts are frequent, and facilities are unevenly distributed.",
         constraints_and_needs="Need low-cost phased renewal, maintain fire access, preserve mature trees, and satisfy elderly + child-friendly use.",
         survey_summary="Residents prioritize safer walking, more shaded seating, and better package/delivery management.",
-        representative_images=["inputs/masterPlan.png", "inputs/centerGround.JPG"],
+        representative_images=[],
     )
 
     retrieval, output = generate_design_schemes(
