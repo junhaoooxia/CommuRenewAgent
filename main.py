@@ -54,36 +54,36 @@ def _save_output(retrieval: dict, output_dict: dict, logger: logging.Logger) -> 
 if __name__ == "__main__":
     logger = _setup_logger()
 
-    logger.info("Step 1/4: Preparing knowledge source specs (PDF + JSONL)")
-    source_specs = [
-        {"source": "pdf", "pdf_path": "knowledge/policies.pdf", "type": "policy", "metadata": {"city": "demo_city"}},
-        {"source": "pdf", "pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
-        {"source": "pdf", "pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
-        {"source": "jsonl", "jsonl_path": "raw_data/design_method.jsonl", "type": "design_method"},
-        {"source": "jsonl", "jsonl_path": "raw_data/trend_strategy.jsonl", "type": "trend_strategy"},
-    ]
+    logger.info("Step 1/4: Discovering knowledge sources under ./knowledge by file extension")
+    knowledge_dir = Path("knowledge")
+    source_specs = []
+    if knowledge_dir.exists():
+        for path in sorted(knowledge_dir.iterdir()):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() == ".pdf":
+                stem = path.stem.lower()
+                node_type = "policy" if "polic" in stem else ("design_method" if "design" in stem else ("trend_strategy" if "trend" in stem else "other"))
+                source_specs.append({"source": "pdf", "pdf_path": str(path), "type": node_type})
+            elif path.suffix.lower() == ".jsonl":
+                default_type = "design_method" if "design_method" in path.stem else ("trend_strategy" if "trend_strategy" in path.stem else "other")
+                source_specs.append({"source": "jsonl", "jsonl_path": str(path), "type": default_type})
 
-    existing_sources = []
-    for spec in source_specs:
-        key = "pdf_path" if spec.get("source") == "pdf" else "jsonl_path"
-        if Path(spec[key]).exists():
-            existing_sources.append(spec)
-
-    detected_pdf_count = sum(1 for s in existing_sources if s.get("source") == "pdf")
-    detected_jsonl_count = sum(1 for s in existing_sources if s.get("source") == "jsonl")
+    detected_pdf_count = sum(1 for s in source_specs if s.get("source") == "pdf")
+    detected_jsonl_count = sum(1 for s in source_specs if s.get("source") == "jsonl")
     logger.info(
-        "Detected sources: pdf=%d, jsonl=%d, total=%d",
+        "Detected sources in knowledge/: pdf=%d, jsonl=%d, total=%d",
         detected_pdf_count,
         detected_jsonl_count,
-        len(existing_sources),
+        len(source_specs),
     )
 
-    if existing_sources:
+    if source_specs:
         logger.info("Step 2/4: Running knowledge indexing")
-        count = index_knowledge_base(existing_sources)
+        count = index_knowledge_base(source_specs)
         logger.info("Indexed %d nodes", count)
     else:
-        logger.warning("No sources found under ./knowledge or ./raw_data. Skipping indexing.")
+        logger.warning("No sources found under ./knowledge. Skipping indexing.")
 
     logger.info("Step 3/4: Building perception input and running retrieval + reasoning")
     perception = PerceptionInput(

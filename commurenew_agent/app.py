@@ -15,7 +15,7 @@ def index_knowledge_base(
     embedding_backend: str = "llamaindex",
 ) -> int:
     """Offline: parse PDFs/JSONL and persist multimodal knowledge nodes + embeddings."""
-    # Offline entrypoint: called when source PDFs change.
+    # Offline entrypoint: called when knowledge sources change.
     return build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
 
 

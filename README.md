@@ -50,13 +50,13 @@ pip install -r requirements.txt
 
 ### 2) Add knowledge sources
 
-Put your source files under `knowledge/` and/or `raw_data/` (or provide absolute paths in code):
+Put your source files under `knowledge/` (or provide absolute paths in code):
 
 - `knowledge/policies.pdf`
 - `knowledge/design_methods.pdf`
 - `knowledge/trend_strategies.pdf`
-- `raw_data/design_method.jsonl`
-- `raw_data/trend_strategy.jsonl`
+- `knowledge/design_method.jsonl`
+- `knowledge/trend_strategy.jsonl`
 
 ### 3) Run example
 
@@ -81,10 +81,8 @@ from commurenew_agent.models import PerceptionInput
 
 source_specs = [
     {"source": "pdf", "pdf_path": "knowledge/policies.pdf", "type": "policy"},
-    {"source": "pdf", "pdf_path": "knowledge/design_methods.pdf", "type": "design_method"},
-    {"source": "pdf", "pdf_path": "knowledge/trend_strategies.pdf", "type": "trend_strategy"},
-    {"source": "jsonl", "jsonl_path": "raw_data/design_method.jsonl", "type": "design_method"},
-    {"source": "jsonl", "jsonl_path": "raw_data/trend_strategy.jsonl", "type": "trend_strategy"},
+    {"source": "jsonl", "jsonl_path": "knowledge/design_method.jsonl", "type": "design_method"},
+    {"source": "jsonl", "jsonl_path": "knowledge/trend_strategy.jsonl", "type": "trend_strategy"},
 ]
 
 index_knowledge_base(source_specs, embedding_backend="llamaindex")
@@ -110,7 +108,7 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 - Default embedding backend is `llamaindex` (CLIP via LlamaIndex). If CLIP runtime dependencies are missing, the code automatically falls back to `simple` and emits a warning. You can also force fallback with `embedding_backend="simple"`.
 - CLIP text encoder context is fixed and short (77 tokens). The ingestion/retrieval embedder now auto-chunks long text and averages chunk embeddings, so long Chinese policy/method pages no longer crash with `too long for context length`.
-- JSONL ingestion supports records with `id/type/title/main_text/images`; image paths are normalized (including Windows `\` separators) relative to the JSONL file directory.
+- JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and prefixed to `ref/...` (e.g. `design_method_images\a.jpg` -> `ref/design_method_images/a.jpg`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
