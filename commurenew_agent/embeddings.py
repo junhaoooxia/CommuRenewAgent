@@ -18,6 +18,7 @@ class EmbeddingConfig:
     text_weight: float = 0.7
     image_weight: float = 0.3
     backend: EmbeddingBackend = "llamaindex"
+    clip_text_chunk_chars: int = 120
 
 
 class LlamaIndexMultimodalEmbedder:
@@ -38,9 +39,56 @@ class LlamaIndexMultimodalEmbedder:
         self.clip = ClipEmbedding()
 
     def embed_text(self, text: str) -> np.ndarray:
-        # Delegate text encoding to CLIP text encoder via LlamaIndex adapter.
-        vec = np.array(self.clip.get_text_embedding(text), dtype=np.float32)
-        return self._normalize(vec)
+        # CLIP text context is short (77 tokens); long pages are chunked and averaged.
+        return self._embed_text_with_clip_limit(text)
+
+    def _embed_text_with_clip_limit(self, text: str) -> np.ndarray:
+        try:
+            vec = np.array(self.clip.get_text_embedding(text), dtype=np.float32)
+            return self._normalize(vec)
+        except RuntimeError as exc:
+            if "too long for context length" not in str(exc):
+                raise
+
+        chunk_vecs: list[np.ndarray] = []
+        for chunk in self._chunk_text_for_clip(text):
+            chunk_vec = self._embed_text_chunk_safely(chunk)
+            if chunk_vec is not None:
+                chunk_vecs.append(chunk_vec)
+
+        if not chunk_vecs:
+            raise RuntimeError("CLIP text embedding failed for all chunks after length fallback")
+
+        return self._normalize(np.mean(np.stack(chunk_vecs), axis=0))
+
+    def _embed_text_chunk_safely(self, chunk: str) -> np.ndarray | None:
+        # If one chunk still overflows tokenizer context, iteratively shorten until it fits.
+        current = chunk.strip()
+        while current:
+            try:
+                return self._normalize(np.array(self.clip.get_text_embedding(current), dtype=np.float32))
+            except RuntimeError as exc:
+                if "too long for context length" not in str(exc):
+                    raise
+                current = current[: max(1, len(current) // 2)]
+        return None
+
+    def _chunk_text_for_clip(self, text: str) -> list[str]:
+        clean = " ".join(text.split())
+        if not clean:
+            return [" "]
+
+        max_chars = max(16, self.config.clip_text_chunk_chars)
+        if len(clean) <= max_chars:
+            return [clean]
+
+        chunks = []
+        start = 0
+        while start < len(clean):
+            end = min(len(clean), start + max_chars)
+            chunks.append(clean[start:end])
+            start = end
+        return chunks
 
     def embed_image(self, image_path: str | Path) -> np.ndarray:
         path = Path(image_path)
