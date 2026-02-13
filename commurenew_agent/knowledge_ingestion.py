@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterable, List
+
+import numpy as np
 
 from .embeddings import EmbeddingConfig, get_embedder
 from .models import KnowledgeNode
@@ -176,6 +179,15 @@ def _read_existing_node_count(db_path: Path) -> int:
     finally:
         conn.close()
 
+
+
+def _embed_node_payload(node: KnowledgeNode, embedding_backend: str) -> tuple[KnowledgeNode, np.ndarray, dict[str, np.ndarray]]:
+    # Thread worker: each task uses its own embedder instance to avoid shared client/thread-safety issues.
+    embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
+    text_emb = embedder.embed_text(node.main_text)
+    image_embs = {img: embedder.embed_image(img) for img in node.images}
+    return node, text_emb, image_embs
+
 def build_knowledge_base(
     source_specs: Iterable[dict],
     db_path: str | Path = "data/knowledge.db",
@@ -198,8 +210,6 @@ def build_knowledge_base(
     ):
         return _read_existing_node_count(db_path)
 
-    # Build embedder once to avoid repeated model initialization overhead.
-    embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     store = SQLiteVectorStore(db_path=db_path)
 
     all_nodes: List[KnowledgeNode] = []
@@ -207,10 +217,11 @@ def build_knowledge_base(
         nodes = _collect_nodes_from_spec(spec)
         all_nodes.extend(nodes)
 
-    for node in all_nodes:
-        # Persist text embeddings and per-image embeddings separately for objective-specific recall.
-        text_emb = embedder.embed_text(node.main_text)
-        image_embs = {img: embedder.embed_image(img) for img in node.images}
+    # Multithread embedding generation for faster offline indexing on large knowledge bases.
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        embedded_payloads = list(executor.map(lambda n: _embed_node_payload(n, embedding_backend), all_nodes))
+
+    for node, text_emb, image_embs in embedded_payloads:
         store.upsert_node(node, text_embedding=text_emb, image_embeddings=image_embs)
 
     nodes_dump_path.parent.mkdir(parents=True, exist_ok=True)

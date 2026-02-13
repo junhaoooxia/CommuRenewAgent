@@ -112,6 +112,7 @@ retrieval_payload, generation_output = generate_design_schemes(
 - For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
 - Offline indexing now caches a fingerprint of `knowledge/` + `ref/` and reuses existing vectors when files are unchanged, avoiding unnecessary re-embedding.
+- Offline embedding generation uses multithreading (`max_workers=10`) during node indexing to speed up large knowledge-base builds.
 - Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
