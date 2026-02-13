@@ -112,6 +112,7 @@ retrieval_payload, generation_output = generate_design_schemes(
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - For `openai_qwen` embeddings, set `OPENAI_API_KEY` (text) and `DASHSCOPE_API_KEY` (Qwen vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
+- Offline indexing now caches a fingerprint of `knowledge/` + `ref/` and reuses existing vectors when files are unchanged, avoiding unnecessary re-embedding.
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
 

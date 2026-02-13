@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -130,12 +131,73 @@ def _collect_nodes_from_spec(spec: dict) -> List[KnowledgeNode]:
     )
 
 
+
+
+def _iter_files_for_fingerprint(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    return sorted([p for p in root.rglob("*") if p.is_file()], key=lambda x: str(x).lower())
+
+
+def _compute_index_fingerprint(source_specs: Iterable[dict], embedding_backend: str) -> str:
+    hasher = hashlib.sha256()
+    hasher.update(embedding_backend.encode("utf-8"))
+    hasher.update(json.dumps(list(source_specs), ensure_ascii=False, sort_keys=True).encode("utf-8"))
+
+    for base in [PROJECT_ROOT / "knowledge", PROJECT_ROOT / "ref"]:
+        hasher.update(str(base).encode("utf-8"))
+        for file_path in _iter_files_for_fingerprint(base):
+            stat = file_path.stat()
+            hasher.update(str(file_path.relative_to(PROJECT_ROOT)).encode("utf-8"))
+            hasher.update(str(stat.st_size).encode("utf-8"))
+            hasher.update(str(stat.st_mtime_ns).encode("utf-8"))
+
+    return hasher.hexdigest()
+
+
+def _read_cached_state(state_path: Path) -> dict | None:
+    if not state_path.exists():
+        return None
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _read_existing_node_count(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT COUNT(1) FROM knowledge_nodes").fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
 def build_knowledge_base(
     source_specs: Iterable[dict],
     db_path: str | Path = "data/knowledge.db",
     nodes_dump_path: str | Path = "data/knowledge_nodes.jsonl",
     embedding_backend: str = "openai_qwen",
+    state_path: str | Path = "data/index_state.json",
 ) -> int:
+    source_specs = list(source_specs)
+    db_path = Path(db_path)
+    nodes_dump_path = Path(nodes_dump_path)
+    state_path = Path(state_path)
+
+    current_fingerprint = _compute_index_fingerprint(source_specs, embedding_backend)
+    cached_state = _read_cached_state(state_path)
+    if (
+        cached_state
+        and cached_state.get("fingerprint") == current_fingerprint
+        and db_path.exists()
+        and nodes_dump_path.exists()
+    ):
+        return _read_existing_node_count(db_path)
+
     # Build embedder once to avoid repeated model initialization overhead.
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     store = SQLiteVectorStore(db_path=db_path)
@@ -150,7 +212,6 @@ def build_knowledge_base(
         emb = embedder.embed_node(node.main_text, node.images)
         store.upsert_node(node, emb)
 
-    nodes_dump_path = Path(nodes_dump_path)
     nodes_dump_path.parent.mkdir(parents=True, exist_ok=True)
     with nodes_dump_path.open("w", encoding="utf-8") as f:
         for node in all_nodes:
@@ -169,6 +230,20 @@ def build_knowledge_base(
                 )
                 + "\n"
             )
+
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "fingerprint": current_fingerprint,
+                "embedding_backend": embedding_backend,
+                "node_count": len(all_nodes),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     store.close()
     return len(all_nodes)
