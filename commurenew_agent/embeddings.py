@@ -18,25 +18,20 @@ EmbeddingBackend = Literal["openai_qwen", "llamaindex", "llamaindex_zh", "simple
 
 @dataclass
 class EmbeddingConfig:
-    dim: int = 1536
+    dim: int = 2560
     text_weight: float = 0.7
     image_weight: float = 0.3
     backend: EmbeddingBackend = "openai_qwen"
     clip_text_chunk_chars: int = 120
     zh_text_model_name: str = "BAAI/bge-m3"
-    openai_text_model_name: str = "text-embedding-3-small"
     qwen_image_model_name: str = "qwen3-vl-embedding"
 
 
 class OpenAIQwenMultimodalEmbedder:
-    """Multimodal embedding via OpenAI text-embedding-3 + Qwen vision embedding."""
+    """Multimodal embedding via Qwen3-VL for both text and image."""
 
     def __init__(self, config: EmbeddingConfig | None = None) -> None:
         self.config = config or EmbeddingConfig()
-
-        from openai import OpenAI
-
-        self.openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
         try:
             import dashscope
@@ -44,10 +39,21 @@ class OpenAIQwenMultimodalEmbedder:
             raise ImportError("`dashscope` is required for Qwen vision embedding backend") from exc
 
         self.dashscope = dashscope
+        if not os.getenv("DASHSCOPE_API_KEY"):
+            raise ImportError("DASHSCOPE_API_KEY is required for openai_qwen backend")
 
     def embed_text(self, text: str) -> np.ndarray:
-        response = self.openai_client.embeddings.create(input=text, model=self.config.openai_text_model_name)
-        vec = np.array(response.data[0].embedding, dtype=np.float32)
+        resp = self.dashscope.MultiModalEmbedding.call(
+            api_key=os.getenv("DASHSCOPE_API_KEY"),
+            model=self.config.qwen_image_model_name,
+            input=[{"text": text}],
+            dimension=self.config.dim,
+        )
+        if getattr(resp, "status_code", None) != 200:
+            raise RuntimeError(f"Qwen text embedding failed: status_code={getattr(resp, 'status_code', None)}")
+
+        emb_list = resp.output["embeddings"]
+        vec = np.array(emb_list[0]["embedding"], dtype=np.float32)
         return self._fit_dim(self._normalize(vec))
 
     def embed_image(self, image_path: str | Path) -> np.ndarray:

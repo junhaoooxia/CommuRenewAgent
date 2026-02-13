@@ -69,8 +69,7 @@ def _build_single_scheme_prompt(
         "constraints": [
             "Focus on public space and outdoor environment renewal.",
             "Use retrieval method IDs in referenced_methods.",
-            "For each node scene, select 1-2 best matching source images from perception.representative_images as selected_representative_images.",
-            "selected_representative_images entries must be exact paths from perception.representative_images.",
+            "For each node scene, provide node-focused scene description and desired_image_prompt; image recall/ranking is handled by downstream retrieval.",
             "Return exactly one scheme JSON object matching the output schema.",
         ],
         "perception": {

@@ -6,7 +6,7 @@ from .image_generation import edit_image_with_gemini_nanobanana
 from .knowledge_ingestion import build_knowledge_base
 from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
-from .retrieval import retrieve_relevant_nodes
+from .retrieval import rank_method_images_for_scene, rank_site_images_for_scene, retrieve_relevant_nodes
 
 
 def index_knowledge_base(
@@ -18,6 +18,27 @@ def index_knowledge_base(
     # Offline entrypoint: called when knowledge sources change.
     return build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
 
+
+
+
+def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: PerceptionInput, embedding_backend: str) -> None:
+    # Stage-2 image recall: (1) node->site images from perception, (2) node->method images from retrieved method/strategy images.
+    for scheme in generated.scheme_list:
+        for scene in scheme.node_scenes:
+            scene_query = f"{scene.node_name}\n{scene.description}\n{scene.desired_image_prompt}"
+            scene.selected_representative_images = rank_site_images_for_scene(
+                scene_text=scene_query,
+                representative_images=perception.representative_images,
+                embedding_backend=embedding_backend,
+                top_k=2,
+            )
+            scene.reference_example_images = rank_method_images_for_scene(
+                scene_text=scene_query,
+                retrieval=retrieval,
+                referenced_ids=scheme.referenced_methods,
+                embedding_backend=embedding_backend,
+                top_k=3,
+            )
 
 def generate_design_schemes(
     perception: PerceptionInput,
@@ -39,6 +60,7 @@ def generate_design_schemes(
     )
     # Second stage: reasoning/generation over retrieved context.
     generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
+    _post_rank_scene_images(generated, retrieval, perception, embedding_backend)
 
     if generate_images:
         output_root = Path(image_output_dir)

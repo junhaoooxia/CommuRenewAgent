@@ -106,13 +106,14 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 ## Notes
 
-- Default embedding backend is `openai_qwen`: OpenAI `text-embedding-3-small` (1536-d) for text + Qwen vision embedding (`qwen3-vl-embedding`) configured to 1536-d for image, so text/image vectors are dimension-aligned before fusion. You can switch to `llamaindex_zh` or `llamaindex`, or force fallback with `embedding_backend="simple"`.
+- Default embedding backend is `openai_qwen`: Qwen `qwen3-vl-embedding` is used for both text (`input=[{"text": ...}]`) and image (`input=[{"image": ...}]`) with 2560-d alignment for direct multimodal fusion. You can switch to `llamaindex_zh` or `llamaindex`, or force fallback with `embedding_backend="simple"`.
 - `llamaindex` backend still uses CLIP text encoder (77-token limit) with built-in chunk+average fallback. `llamaindex_zh` uses `BAAI/bge-m3` text + CLIP image as an alternative when OpenAI/Qwen credentials are unavailable.
 - JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<repo_root>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../CommuRenewAgent/ref/design_method_images/a.jpg`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
-- For `openai_qwen` embeddings, set `OPENAI_API_KEY` (text) and `DASHSCOPE_API_KEY` (Qwen vision embedding).
+- For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
 - Offline indexing now caches a fingerprint of `knowledge/` + `ref/` and reuses existing vectors when files are unchanged, avoiding unnecessary re-embedding.
+- Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
 
