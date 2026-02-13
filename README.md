@@ -35,8 +35,7 @@ Each knowledge page/method is represented as a node:
 
 Embeddings are multimodal:
 
-- Text and image embeddings are generated with **LlamaIndex CLIP** (`llama_index.embeddings.clip.ClipEmbedding`)
-- Weighted fusion is applied (default text 0.7, image 0.3)
+- Text and image embeddings are generated with **Qwen `qwen3-vl-embedding`** (DashScope) in a unified 2560-d vector space.
 
 The index is persisted to SQLite (`data/knowledge.db`) so it can be reused across sessions.
 
@@ -106,8 +105,8 @@ retrieval_payload, generation_output = generate_design_schemes(
 
 ## Notes
 
-- Default embedding backend is `openai_qwen`: Qwen `qwen3-vl-embedding` is used for both text (`input=[{"text": ...}]`) and image (`input=[{"image": ...}]`) with 2560-d alignment for direct multimodal fusion. You can switch to `llamaindex_zh` or `llamaindex`, or force fallback with `embedding_backend="simple"`.
-- `llamaindex` backend still uses CLIP text encoder (77-token limit) with built-in chunk+average fallback. `llamaindex_zh` uses `BAAI/bge-m3` text + CLIP image as an alternative when OpenAI/Qwen credentials are unavailable.
+- Default embedding backend is `openai_qwen`: Qwen `qwen3-vl-embedding` is used for both text (`input=[{"text": ...}]`) and image (`input=[{"image": ...}]`) with 2560-d alignment for direct multimodal retrieval.
+- The only fallback backend is `simple` (deterministic local embedding) for environments without DashScope credentials.
 - JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<repo_root>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../CommuRenewAgent/ref/design_method_images/a.jpg`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
@@ -116,5 +115,3 @@ retrieval_payload, generation_output = generate_design_schemes(
 - Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 
-
-> If you want true CLIP embeddings via LlamaIndex, install extra runtime deps: `torch` and OpenAI CLIP (`pip install git+https://github.com/openai/CLIP.git`).

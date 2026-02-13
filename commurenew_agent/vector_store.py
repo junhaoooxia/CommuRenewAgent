@@ -13,13 +13,11 @@ from .models import KnowledgeNode, RetrievedNode
 class SQLiteVectorStore:
     def __init__(self, db_path: str | Path = "data/knowledge.db") -> None:
         self.db_path = Path(db_path)
-        # Ensure db directory exists before opening SQLite file.
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
-        # Single table keeps node payload + embedding bytes co-located for simplicity.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS knowledge_nodes (
@@ -29,17 +27,31 @@ class SQLiteVectorStore:
                 main_text TEXT NOT NULL,
                 images_json TEXT NOT NULL,
                 metadata_json TEXT NOT NULL,
-                embedding BLOB NOT NULL
+                text_embedding BLOB
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_node_images (
+                node_id TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                PRIMARY KEY(node_id, image_path)
             )
             """
         )
         self.conn.commit()
 
-    def upsert_node(self, node: KnowledgeNode, embedding: np.ndarray) -> None:
-        # Upsert by node id so re-indexing updates existing records deterministically.
+    def upsert_node(
+        self,
+        node: KnowledgeNode,
+        text_embedding: np.ndarray,
+        image_embeddings: dict[str, np.ndarray],
+    ) -> None:
         self.conn.execute(
             """
-            INSERT INTO knowledge_nodes (id, type, title, main_text, images_json, metadata_json, embedding)
+            INSERT INTO knowledge_nodes (id, type, title, main_text, images_json, metadata_json, text_embedding)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 type=excluded.type,
@@ -47,7 +59,7 @@ class SQLiteVectorStore:
                 main_text=excluded.main_text,
                 images_json=excluded.images_json,
                 metadata_json=excluded.metadata_json,
-                embedding=excluded.embedding
+                text_embedding=excluded.text_embedding
             """,
             (
                 node.id,
@@ -56,20 +68,29 @@ class SQLiteVectorStore:
                 node.main_text,
                 json.dumps(node.images, ensure_ascii=False),
                 json.dumps(node.metadata, ensure_ascii=False),
-                # Store as float32 bytes for compact persistence and fast reconstruction.
-                embedding.astype(np.float32).tobytes(),
+                text_embedding.astype(np.float32).tobytes(),
             ),
         )
+
+        self.conn.execute("DELETE FROM knowledge_node_images WHERE node_id = ?", (node.id,))
+        for image_path, emb in image_embeddings.items():
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO knowledge_node_images (node_id, image_path, embedding)
+                VALUES (?, ?, ?)
+                """,
+                (node.id, image_path, emb.astype(np.float32).tobytes()),
+            )
         self.conn.commit()
 
-    def search(self, query_embedding: np.ndarray, top_k: int = 15) -> List[RetrievedNode]:
-        # For portability we run brute-force cosine (dot on normalized vectors) in Python.
+    def search_text(self, query_embedding: np.ndarray, top_k: int = 15) -> List[RetrievedNode]:
         rows = self.conn.execute(
-            "SELECT id, type, title, main_text, images_json, metadata_json, embedding FROM knowledge_nodes"
+            "SELECT id, type, title, main_text, images_json, metadata_json, text_embedding FROM knowledge_nodes"
         ).fetchall()
         matches: List[RetrievedNode] = []
         for row in rows:
-            # Rebuild vector from BLOB and score against query.
+            if row[6] is None:
+                continue
             emb = np.frombuffer(row[6], dtype=np.float32)
             score = float(np.dot(query_embedding, emb))
             matches.append(
@@ -85,6 +106,16 @@ class SQLiteVectorStore:
             )
         matches.sort(key=lambda item: item.score, reverse=True)
         return matches[:top_k]
+
+    def get_image_embeddings(self, node_ids: list[str] | None = None) -> list[tuple[str, str, np.ndarray]]:
+        if node_ids:
+            placeholders = ",".join(["?"] * len(node_ids))
+            sql = f"SELECT node_id, image_path, embedding FROM knowledge_node_images WHERE node_id IN ({placeholders})"
+            rows = self.conn.execute(sql, tuple(node_ids)).fetchall()
+        else:
+            rows = self.conn.execute("SELECT node_id, image_path, embedding FROM knowledge_node_images").fetchall()
+
+        return [(r[0], r[1], np.frombuffer(r[2], dtype=np.float32)) for r in rows]
 
     def close(self) -> None:
         self.conn.close()

@@ -67,7 +67,7 @@ def extract_nodes_from_pdf(
     return nodes
 
 
-def _resolve_image_path(image_path: str, base_dir: Path) -> str:
+def _resolve_image_path(image_path: str, _base_dir: Path) -> str:
     # JSONL may use Windows-style separators; normalize to local filesystem format.
     normalized = Path(image_path.replace("\\", "/"))
     # Keep absolute paths as-is; relative paths are resolved under <repo_root>/ref/<original_relative_path>.
@@ -208,9 +208,10 @@ def build_knowledge_base(
         all_nodes.extend(nodes)
 
     for node in all_nodes:
-        # Embed multimodal node content and persist vectors for later similarity search.
-        emb = embedder.embed_node(node.main_text, node.images)
-        store.upsert_node(node, emb)
+        # Persist text embeddings and per-image embeddings separately for objective-specific recall.
+        text_emb = embedder.embed_text(node.main_text)
+        image_embs = {img: embedder.embed_image(img) for img in node.images}
+        store.upsert_node(node, text_embedding=text_emb, image_embeddings=image_embs)
 
     nodes_dump_path.parent.mkdir(parents=True, exist_ok=True)
     with nodes_dump_path.open("w", encoding="utf-8") as f:

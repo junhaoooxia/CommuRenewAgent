@@ -21,7 +21,7 @@ def index_knowledge_base(
 
 
 
-def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: PerceptionInput, embedding_backend: str) -> None:
+def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: PerceptionInput, embedding_backend: str, db_path: str | Path) -> None:
     # Stage-2 image recall: (1) node->site images from perception, (2) node->method images from retrieved method/strategy images.
     for scheme in generated.scheme_list:
         for scene in scheme.node_scenes:
@@ -37,6 +37,7 @@ def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: 
                 retrieval=retrieval,
                 referenced_ids=scheme.referenced_methods,
                 embedding_backend=embedding_backend,
+                db_path=db_path,
                 top_k=3,
             )
 
@@ -60,7 +61,7 @@ def generate_design_schemes(
     )
     # Second stage: reasoning/generation over retrieved context.
     generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
-    _post_rank_scene_images(generated, retrieval, perception, embedding_backend)
+    _post_rank_scene_images(generated, retrieval, perception, embedding_backend, db_path)
 
     if generate_images:
         output_root = Path(image_output_dir)

@@ -16,12 +16,11 @@ def retrieve_relevant_nodes(
     top_k: int = 15,
     embedding_backend: str = "openai_qwen",
 ) -> RetrievalResult:
-    # Text-plan retrieval is text-only: do not use knowledge/perception images for this recall stage.
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
-    query_emb = embedder.embed_query(perception.to_text_block(), image_paths=[])
+    query_emb = embedder.embed_text(perception.to_text_block())
 
     store = SQLiteVectorStore(db_path=db_path)
-    retrieved = store.search(query_embedding=query_emb, top_k=top_k)
+    retrieved = store.search_text(query_embedding=query_emb, top_k=top_k)
     store.close()
 
     result = RetrievalResult()
@@ -61,6 +60,7 @@ def rank_method_images_for_scene(
     scene_text: str,
     retrieval: RetrievalResult,
     referenced_ids: Iterable[str],
+    db_path: str | Path = "data/knowledge.db",
     embedding_backend: str = "openai_qwen",
     top_k: int = 3,
 ) -> list[str]:
@@ -69,18 +69,16 @@ def rank_method_images_for_scene(
 
     ref_set = set(referenced_ids)
     candidates = retrieval.retrieved_methods + retrieval.retrieved_trend_strategies
-    if ref_set:
-        candidates = [n for n in candidates if n.id in ref_set]
+    candidate_ids = [n.id for n in candidates if not ref_set or n.id in ref_set]
+
+    store = SQLiteVectorStore(db_path=db_path)
+    image_rows = store.get_image_embeddings(candidate_ids)
+    store.close()
 
     scored: list[tuple[float, str]] = []
-    for node in candidates:
-        for img_path in node.images:
-            p = Path(img_path)
-            if not p.exists():
-                continue
-            img_emb = embedder.embed_image(str(p))
-            score = float(np.dot(text_emb, img_emb))
-            scored.append((score, str(p)))
+    for _, img_path, img_emb in image_rows:
+        score = float(np.dot(text_emb, img_emb))
+        scored.append((score, img_path))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     deduped: list[str] = []
