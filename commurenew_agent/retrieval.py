@@ -37,17 +37,17 @@ def _collapse_children_to_parents(nodes: list[RetrievedNode]) -> list[RetrievedN
 def retrieve_relevant_nodes(
     perception: PerceptionInput,
     db_path: str | Path = "data/knowledge.db",
-    top_k: int = 15,
+    top_k: int = 20,
     embedding_backend: str = "openai_qwen",
 ) -> RetrievalResult:
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     query_emb = embedder.embed_text(_safe_text(perception.to_text_block()))
 
     store = SQLiteVectorStore(db_path=db_path)
-    retrieved_children = store.search_text(query_embedding=query_emb, top_k=max(top_k * 3, 30))
+    retrieved_children = store.search_text(query_embedding=query_emb, top_k=max(top_k * 9, 120))
     store.close()
 
-    retrieved = _collapse_children_to_parents(retrieved_children)[:top_k]
+    retrieved = _collapse_children_to_parents(retrieved_children)
 
     result = RetrievalResult()
     for node in retrieved:
@@ -57,6 +57,9 @@ def retrieve_relevant_nodes(
             result.retrieved_policies.append(node)
         elif node.type == "trend_strategy":
             result.retrieved_trend_strategies.append(node)
+    result.retrieved_methods = result.retrieved_methods[:top_k]
+    result.retrieved_policies = result.retrieved_policies[:top_k]
+    result.retrieved_trend_strategies = result.retrieved_trend_strategies[:top_k]
     return result
 
 

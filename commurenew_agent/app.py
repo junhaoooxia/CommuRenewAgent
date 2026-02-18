@@ -44,7 +44,7 @@ def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: 
 def generate_design_schemes(
     perception: PerceptionInput,
     db_path: str | Path = "data/knowledge.db",
-    top_k: int = 15,
+    top_k: int = 20,
     model: str = "gpt-5.2",
     embedding_backend: str = "openai_qwen",
     generate_images: bool = False,

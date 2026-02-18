@@ -16,16 +16,8 @@ from .vector_store import SQLiteVectorStore
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百千0-9]+章")
-SECTION_RE = re.compile(r"^第[一二三四五六七八九十百千0-9]+节")
-ARTICLE_RE = re.compile(r"^第[一二三四五六七八九十百千0-9]+条")
-ITEM_CN_RE = re.compile(r"^[一二三四五六七八九十]+、")
-ITEM_PAREN_RE = re.compile(r"^（[一二三四五六七八九十]+）")
-ITEM_NUM_RE = re.compile(r"^\d+[\.、]")
-
-CHILD_CHARS = 1100
-CHILD_OVERLAP = 220
-PARENT_MAX_CHARS = 4200
+CHUNK_CHARS = 1600
+CHUNK_OVERLAP = 240
 
 
 def slugify(text: str) -> str:
@@ -78,48 +70,30 @@ def _extract_pdf_text_pages(pdf_path: Path) -> list[dict]:
     return pages
 
 
-def _extract_structural_units(doc_title: str, page_texts: list[dict], base_metadata: dict) -> list[dict]:
-    chapter = ""
-    section = ""
-    article = ""
-    item = ""
-    units: list[dict] = []
+def _paragraph_and_length_chunks(text: str, max_chars: int = CHUNK_CHARS, overlap_chars: int = CHUNK_OVERLAP) -> list[str]:
+    paras = [p.strip() for p in re.split(r"\n\s*\n", _normalize_text(text)) if p.strip()]
+    if not paras:
+        return _split_long_text(text, max_chars=max_chars, overlap_chars=overlap_chars)
 
-    for item_page in page_texts:
-        page_no = item_page["page"]
-        text = item_page["text"]
-        if not text:
+    chunks: list[str] = []
+    current = ""
+    for para in paras:
+        candidate = f"{current}\n\n{para}".strip() if current else para
+        if len(candidate) <= max_chars:
+            current = candidate
             continue
+        if current:
+            chunks.append(current)
+        if len(para) > max_chars:
+            pieces = _split_long_text(para, max_chars=max_chars, overlap_chars=overlap_chars)
+            chunks.extend(pieces[:-1])
+            current = pieces[-1] if pieces else ""
+        else:
+            current = para
 
-        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-        for para in paragraphs:
-            heading = para.split("\n", 1)[0].strip()
-            if CHAPTER_RE.match(heading):
-                chapter, section, article, item = heading, "", "", ""
-            elif SECTION_RE.match(heading):
-                section, article, item = heading, "", ""
-            elif ARTICLE_RE.match(heading):
-                article, item = heading, ""
-            elif ITEM_CN_RE.match(heading) or ITEM_PAREN_RE.match(heading) or ITEM_NUM_RE.match(heading):
-                item = heading
-
-            path_parts = [p for p in [chapter, section, article, item] if p]
-            units.append(
-                {
-                    "text": para,
-                    "chapter": chapter,
-                    "section": section,
-                    "article": article,
-                    "item": item,
-                    "item_path": " > ".join(path_parts),
-                    "page_start": page_no,
-                    "page_end": page_no,
-                    "metadata": base_metadata,
-                    "doc_title": doc_title,
-                }
-            )
-
-    return units
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _split_long_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
@@ -142,84 +116,39 @@ def _split_long_text(text: str, max_chars: int, overlap_chars: int) -> list[str]
     return chunks
 
 
-def _build_parent_child_nodes(
+def _build_simple_chunk_nodes(
     source_id_prefix: str,
     node_type: str,
     doc_title: str,
-    units: list[dict],
+    text: str,
     base_metadata: dict,
     images: list[str] | None = None,
+    page_range: list[int] | None = None,
 ) -> list[KnowledgeNode]:
     images = images or []
-    if not units:
-        return []
-
-    parents: list[dict] = []
-    current_group: list[dict] = []
-    current_key = None
-
-    def _flush_group(group: list[dict]) -> None:
-        if not group:
-            return
-        raw_text = "\n\n".join(u["text"] for u in group if u["text"].strip())
-        parent_parts = _split_long_text(raw_text, max_chars=PARENT_MAX_CHARS, overlap_chars=300)
-        for idx, part in enumerate(parent_parts, start=1):
-            parent_id = f"{source_id_prefix}_parent_{len(parents)+1}_{idx}"
-            chapter = group[-1].get("chapter", "")
-            section = group[-1].get("section", "")
-            article = group[-1].get("article", "")
-            item_path = group[-1].get("item_path", "")
-            parents.append(
-                {
-                    "parent_id": parent_id,
-                    "text": part,
-                    "chapter": chapter,
-                    "section": section,
-                    "article": article,
-                    "item_path": item_path,
-                    "page_start": min(u["page_start"] for u in group),
-                    "page_end": max(u["page_end"] for u in group),
-                }
-            )
-
-    for unit in units:
-        key = unit.get("article") or unit.get("section") or unit.get("chapter") or f"p{unit['page_start']}"
-        if current_key is None:
-            current_key = key
-        if key != current_key:
-            _flush_group(current_group)
-            current_group = []
-            current_key = key
-        current_group.append(unit)
-    _flush_group(current_group)
+    chunks = _paragraph_and_length_chunks(text)
+    if not chunks and text.strip():
+        chunks = [text.strip()]
 
     nodes: list[KnowledgeNode] = []
-    for parent in parents:
-        child_parts = _split_long_text(parent["text"], max_chars=CHILD_CHARS, overlap_chars=CHILD_OVERLAP)
-        for i, child_text in enumerate(child_parts, start=1):
-            child_id = f"{parent['parent_id']}_child_{i}"
-            meta = {
-                **base_metadata,
-                "chunk_level": "child",
-                "doc_title": doc_title,
-                "chapter": parent["chapter"],
-                "section": parent["section"],
-                "article": parent["article"],
-                "item_path": parent["item_path"],
-                "page_range": [parent["page_start"], parent["page_end"]],
-                "parent_id": parent["parent_id"],
-                "parent_text": parent["text"],
-            }
-            nodes.append(
-                KnowledgeNode(
-                    id=child_id,
-                    type=node_type,
-                    title=doc_title,
-                    main_text=child_text,
-                    images=images,
-                    metadata=meta,
-                )
+    for idx, chunk_text in enumerate(chunks, start=1):
+        meta = {
+            **base_metadata,
+            "chunk_level": "simple",
+            "doc_title": doc_title,
+            "chunk_index": idx,
+            "page_range": page_range or [1, 1],
+        }
+        nodes.append(
+            KnowledgeNode(
+                id=f"{source_id_prefix}_chunk_{idx}",
+                type=node_type,
+                title=doc_title,
+                main_text=chunk_text,
+                images=images,
+                metadata=meta,
             )
+        )
     return nodes
 
 
@@ -273,27 +202,14 @@ def extract_nodes_from_pdf(
         "publish_date": publish_date,
     }
 
-    units = _extract_structural_units(doc_title=pdf_path.stem, page_texts=page_texts, base_metadata=base_meta)
-    if not units:
-        units = [
-            {
-                "text": all_text,
-                "chapter": "",
-                "section": "",
-                "article": "",
-                "item_path": "",
-                "page_start": 1,
-                "page_end": max((p["page"] for p in page_texts), default=1),
-            }
-        ]
-
-    return _build_parent_child_nodes(
+    return _build_simple_chunk_nodes(
         source_id_prefix=f"{slugify(pdf_path.stem)}_{node_type}",
         node_type=node_type,
         doc_title=pdf_path.stem,
-        units=units,
+        text=all_text,
         base_metadata=base_meta,
         images=page_images,
+        page_range=[1, max((p["page"] for p in page_texts), default=1)],
     )
 
 
@@ -319,18 +235,14 @@ def extract_nodes_from_word(
     region, publish_date = _extract_region_publish(text)
     base_meta = {**(metadata or {}), "source": "word", "word": str(word_path), "region": region, "publish_date": publish_date}
 
-    page_texts = [{"page": 1, "text": text}]
-    units = _extract_structural_units(doc_title=word_path.stem, page_texts=page_texts, base_metadata=base_meta)
-    if not units and text:
-        units = [{"text": text, "chapter": "", "section": "", "article": "", "item_path": "", "page_start": 1, "page_end": 1}]
-
-    return _build_parent_child_nodes(
+    return _build_simple_chunk_nodes(
         source_id_prefix=f"{slugify(word_path.stem)}_{node_type}",
         node_type=node_type,
         doc_title=word_path.stem,
-        units=units,
+        text=text,
         base_metadata=base_meta,
         images=[],
+        page_range=[1, 1],
     )
 
 
@@ -374,23 +286,16 @@ def extract_nodes_from_jsonl(
                 "region": region,
                 "publish_date": publish_date,
             }
-            units = _extract_structural_units(
-                doc_title=title,
-                page_texts=[{"page": 1, "text": main_text}],
-                base_metadata=base_meta,
-            )
-            if not units and main_text:
-                units = [{"text": main_text, "chapter": "", "section": "", "article": "", "item_path": "", "page_start": 1, "page_end": 1}]
-
             source_prefix = f"{slugify(jsonl_path.stem)}_{record_type}_{slugify(record_id)}"
             nodes.extend(
-                _build_parent_child_nodes(
+                _build_simple_chunk_nodes(
                     source_id_prefix=source_prefix,
                     node_type=record_type,
                     doc_title=title,
-                    units=units,
+                    text=main_text,
                     base_metadata=base_meta,
                     images=images,
+                    page_range=[1, 1],
                 )
             )
 
