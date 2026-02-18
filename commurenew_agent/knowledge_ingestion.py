@@ -85,15 +85,16 @@ def extract_nodes_from_word(
     paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
     text = "\n".join(paragraphs)
     title = paragraphs[0][:120] if paragraphs else word_path.stem
-    node = KnowledgeNode(
-        id=f"{word_path.stem}_1",
-        type=node_type,
-        title=title,
-        main_text=text,
-        images=[],
-        metadata={**(metadata or {}), "source": "word", "word": str(word_path)},
-    )
-    return [node]
+    return [
+        KnowledgeNode(
+            id=f"{word_path.stem}_1",
+            type=node_type,
+            title=title,
+            main_text=text,
+            images=[],
+            metadata={**(metadata or {}), "source": "word", "word": str(word_path)},
+        )
+    ]
 
 
 def _resolve_image_path(image_path: str, _base_dir: Path) -> str:
@@ -192,6 +193,19 @@ def _build_source_signature(spec: dict, embedding_backend: str) -> str:
     return hasher.hexdigest()
 
 
+def _build_node_signature(node: KnowledgeNode) -> str:
+    hasher = hashlib.sha256()
+    payload = {
+        "id": node.id,
+        "type": node.type,
+        "title": node.title,
+        "main_text": node.main_text,
+        "images": node.images,
+    }
+    hasher.update(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    return hasher.hexdigest()
+
+
 def _read_cached_state(state_path: Path) -> dict:
     if not state_path.exists():
         return {}
@@ -201,11 +215,53 @@ def _read_cached_state(state_path: Path) -> dict:
         return {}
 
 
-def _embed_node_payload(node: KnowledgeNode, embedding_backend: str) -> tuple[KnowledgeNode, np.ndarray, dict[str, np.ndarray]]:
-    embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
-    text_emb = embedder.embed_text(node.main_text)
-    image_embs = {img: embedder.embed_image(img) for img in node.images}
-    return node, text_emb, image_embs
+def _safe_text_for_embedding(node: KnowledgeNode) -> str:
+    text = (node.main_text or "").strip()
+    if text:
+        return text
+    fallback = (node.title or "").strip() or node.id
+    return fallback or "empty"
+
+
+def _embed_text_nodes(nodes: list[KnowledgeNode], embedding_backend: str) -> dict[str, np.ndarray]:
+    if not nodes:
+        return {}
+
+    def _embed(node: KnowledgeNode) -> tuple[str, np.ndarray]:
+        embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
+        return node.id, embedder.embed_text(_safe_text_for_embedding(node))
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        payloads = list(executor.map(_embed, nodes))
+    return {node_id: emb for node_id, emb in payloads}
+
+
+def _embed_images_for_nodes(
+    nodes: list[KnowledgeNode],
+    embedding_backend: str,
+    existing_image_embeddings: dict[str, dict[str, np.ndarray]],
+) -> dict[str, dict[str, np.ndarray]]:
+    output: dict[str, dict[str, np.ndarray]] = {}
+
+    for node in nodes:
+        cached = existing_image_embeddings.get(node.id, {})
+        merged: dict[str, np.ndarray] = {}
+
+        missing_images: list[str] = []
+        for image_path in node.images:
+            if image_path in cached:
+                merged[image_path] = cached[image_path]
+            else:
+                missing_images.append(image_path)
+
+        if missing_images:
+            embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
+            for image_path in missing_images:
+                merged[image_path] = embedder.embed_image(image_path)
+
+        output[node.id] = merged
+
+    return output
 
 
 def _dump_all_nodes(store: SQLiteVectorStore, nodes_dump_path: Path) -> None:
@@ -249,39 +305,70 @@ def build_knowledge_base(
 
     current_source_keys = {_build_source_key(spec) for spec in source_specs}
     removed_keys = set(previous_sources.keys()) - current_source_keys
-    removed_node_ids: list[str] = []
     for key in removed_keys:
-        removed_node_ids.extend(previous_sources.get(key, {}).get("node_ids", []))
+        removed_ids = previous_sources.get(key, {}).get("node_ids", [])
+        if removed_ids:
+            store.delete_nodes(removed_ids)
 
     new_state_sources: dict[str, dict] = {}
     for spec in source_specs:
         source_key = _build_source_key(spec)
         source_signature = _build_source_signature(spec, embedding_backend)
         previous_entry = previous_sources.get(source_key, {})
-        previous_node_ids = previous_entry.get("node_ids", [])
 
         if previous_entry and previous_entry.get("signature") == source_signature:
             new_state_sources[source_key] = previous_entry
             continue
 
-        if previous_node_ids:
-            store.delete_nodes(previous_node_ids)
-
         nodes = _collect_nodes_from_spec(spec)
-        if nodes:
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                embedded_payloads = list(executor.map(lambda n: _embed_node_payload(n, embedding_backend), nodes))
-            for node, text_emb, image_embs in embedded_payloads:
-                store.upsert_node(node, text_embedding=text_emb, image_embeddings=image_embs)
+        prev_ids = set(previous_entry.get("node_ids", []))
+        prev_signatures = previous_entry.get("node_signatures", {})
+        current_ids = {node.id for node in nodes}
+
+        removed_ids = sorted(prev_ids - current_ids)
+        if removed_ids:
+            store.delete_nodes(removed_ids)
+
+        nodes_to_upsert: list[KnowledgeNode] = []
+        existing_text_embeddings: dict[str, np.ndarray] = {}
+        existing_image_embeddings: dict[str, dict[str, np.ndarray]] = {}
+
+        for node in nodes:
+            node_sig = _build_node_signature(node)
+            if prev_signatures.get(node.id) == node_sig:
+                continue
+
+            existing_text = store.get_node_text_embedding(node.id)
+            if existing_text is not None:
+                existing_text_embeddings[node.id] = existing_text
+                existing_image_embeddings[node.id] = store.get_node_image_embeddings(node.id)
+            nodes_to_upsert.append(node)
+
+        text_embeddings = _embed_text_nodes(
+            [n for n in nodes_to_upsert if n.id not in existing_text_embeddings],
+            embedding_backend=embedding_backend,
+        )
+        text_embeddings.update(existing_text_embeddings)
+
+        image_embeddings = _embed_images_for_nodes(
+            nodes_to_upsert,
+            embedding_backend=embedding_backend,
+            existing_image_embeddings=existing_image_embeddings,
+        )
+
+        for node in nodes_to_upsert:
+            store.upsert_node(
+                node,
+                text_embedding=text_embeddings[node.id],
+                image_embeddings=image_embeddings[node.id],
+            )
 
         new_state_sources[source_key] = {
             "signature": source_signature,
             "node_ids": [node.id for node in nodes],
+            "node_signatures": {node.id: _build_node_signature(node) for node in nodes},
             "spec": spec,
         }
-
-    if removed_node_ids:
-        store.delete_nodes(removed_node_ids)
 
     _dump_all_nodes(store, nodes_dump_path)
 

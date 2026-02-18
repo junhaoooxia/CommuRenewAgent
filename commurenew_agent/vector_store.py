@@ -83,6 +83,19 @@ class SQLiteVectorStore:
             )
         self.conn.commit()
 
+    def get_node_text_embedding(self, node_id: str) -> np.ndarray | None:
+        row = self.conn.execute("SELECT text_embedding FROM knowledge_nodes WHERE id = ?", (node_id,)).fetchone()
+        if not row or row[0] is None:
+            return None
+        return np.frombuffer(row[0], dtype=np.float32)
+
+    def get_node_image_embeddings(self, node_id: str) -> dict[str, np.ndarray]:
+        rows = self.conn.execute(
+            "SELECT image_path, embedding FROM knowledge_node_images WHERE node_id = ?",
+            (node_id,),
+        ).fetchall()
+        return {r[0]: np.frombuffer(r[1], dtype=np.float32) for r in rows}
+
     def delete_nodes(self, node_ids: list[str]) -> None:
         if not node_ids:
             return
