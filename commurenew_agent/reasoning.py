@@ -62,27 +62,174 @@ def _build_single_scheme_prompt(
     scheme_name: str,
     scheme_focus: str,
 ) -> str:
-    payload = {
-        "task": "Generate one residential renewal scheme in strict JSON.",
-        "scheme_name": scheme_name,
-        "scheme_focus": scheme_focus,
-        "constraints": [
-            "Focus on public space and outdoor environment renewal.",
-            "Use retrieval method IDs in referenced_methods.",
-            "For each node scene, provide node-focused scene description and desired_image_prompt; image recall/ranking is handled by downstream retrieval.",
-            "Return exactly one scheme JSON object matching the output schema.",
-        ],
-        "perception": {
-            "district_name": perception.district_name,
-            "current_description": perception.current_description,
-            "problem_summary": perception.problem_summary,
-            "constraints_and_needs": perception.constraints_and_needs,
-            "survey_summary": perception.survey_summary,
-        },
-        "retrieval": _format_retrieved_nodes(retrieval),
-        "output_schema": SchemeSchema.model_json_schema(),
-    }
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    retrieval_json = json.dumps(_format_retrieved_nodes(retrieval), ensure_ascii=False, indent=2)
+    output_schema_json = json.dumps(SchemeSchema.model_json_schema(), ensure_ascii=False, indent=2)
+    return f"""你是一名具有城市更新与住区改造经验的综合设计顾问。当前任务是基于给定住区的现状信息、问题总结、居民调查结果与现实约束条件，按照住区更新的一般实践逻辑，完成一次“更新模式判定 + 核心需求提炼 + 空间更新策略生成”的全过程推理。
+
+本任务不是直接生成完整设计图纸，而是在明确更新模式与更新目标的前提下，提出多套具有空间逻辑的更新建议，并对关键节点进行示意性空间演绎。
+
+一、项目基本信息
+
+【更新对象】
+{perception.district_name}
+
+【现状与空间条件】
+{perception.current_description}
+
+【问题总结】
+{perception.problem_summary}
+
+【居民调查结果】
+{perception.survey_summary}
+
+二、第一阶段任务：更新模式判定与核心需求重构
+
+在生成空间方案前，请先完成以下思考：
+
+1. 更新模式判定
+
+结合住区建成年代、建筑结构状况、问题类型与现实约束，自主判断本次住区更新更适合以下哪种模式（或其组合）：
+
+微更新（局部改善、设施补齐）
+
+综合整治（系统提升公共空间与基础设施）
+
+拆改结合（部分重构）
+
+整体重建
+
+请明确说明：
+
+为什么选择该模式；
+
+为什么不选择其他模式；
+
+本次更新的尺度与干预强度应控制在何种范围。
+
+2. 核心更新目标再提炼
+
+请基于：
+
+现状问题；
+
+居民满意度结构；
+
+未来趋势接受度；
+
+现实约束；
+
+自行提出 3–5 条本次住区更新的“核心目标”，作为后续空间设计的指导原则。
+
+注意：
+这些核心目标不应简单重复输入内容，而应经过综合判断与优先级排序。
+
+三、第二阶段任务：生成三套空间更新方案
+
+在明确更新模式与核心目标后，请生成三套具有明显差异化侧重点的更新方案。
+
+每套方案需包含：
+
+（一）总体策略定位
+
+方案名称
+
+更新主题与优先方向
+
+如何回应前述“核心目标”
+
+（二）重点空间更新策略（以空间为核心）
+
+请围绕以下空间系统展开更新构思：
+
+出入口空间重构
+
+步行系统与铺装更新
+
+非机动车“停放+充电”系统重构
+
+公共活动空间升级（含室内公共空间补充）
+
+楼栋首层与大堂空间整治
+
+老幼友好优化
+
+智慧物流与无人配送嵌入方式
+
+每一项需说明：
+
+空间组织如何改变；
+
+是否可分期实施；
+
+与既有空间的衔接方式；
+
+对居民日常生活影响是否可控。
+
+四、趋势场景嵌入原则
+
+在引入智慧物流或低空经济相关设施时，必须遵守：
+
+地面无人车/机器人配送优先；
+
+无人机配送仅在满足严格安全条件下考虑；
+
+设施选址需回应居民偏好（靠近单元门口或可控节点）；
+
+必须提出隐私保护、安全隔离与噪音控制措施；
+
+不允许生成大规模科幻化布设。
+
+五、输出形式要求
+1. 文字方案输出
+
+三套方案结构清晰；
+
+先写更新模式与核心目标；
+
+再写空间策略；
+
+不生成完整平面图；
+
+不进行详细工程预算。
+
+2. 关键节点示意生成说明
+
+每套方案选择 3–5 个关键节点，提供：
+
+更新前问题概述；
+
+更新后空间组织描述；
+
+用于图像生成的空间描述语句（真实、可落地）。
+
+六、必须遵守的现实边界
+
+不得进行整体拆除重建；
+
+不得破坏成熟乔木与大面积绿地；
+
+不得影响消防通道与登高面；
+
+不得脱离既有人车分流格局；
+
+必须考虑施工干扰可控。
+
+请严格按照以上流程展开推理与生成。
+
+开始。
+
+【补充约束】
+- 当前仅生成单方案，方案名固定为：{scheme_name}
+- 该方案重点方向：{scheme_focus}
+- 必须使用检索结果中的方法ID写入 referenced_methods。
+- 输出必须是严格 JSON，且只能输出一个 SchemeSchema 对象（不得包含额外文本）。
+
+【检索结果（仅文本知识用于方案推理）】
+{retrieval_json}
+
+【输出 JSON Schema】
+{output_schema_json}
+"""
 
 
 def _build_multimodal_user_input(prompt: str, representative_images: List[str]) -> List[dict]:

@@ -21,7 +21,6 @@ class PerceptionInput:
     district_name: str
     current_description: str
     problem_summary: str
-    constraints_and_needs: str
     survey_summary: str
     representative_images: List[str] = field(default_factory=list)
 
@@ -32,7 +31,6 @@ class PerceptionInput:
                 f"District: {self.district_name}",
                 f"Current Situation: {self.current_description}",
                 f"Problems: {self.problem_summary}",
-                f"Constraints & Needs: {self.constraints_and_needs}",
                 f"Survey Summary: {self.survey_summary}",
             ]
         )

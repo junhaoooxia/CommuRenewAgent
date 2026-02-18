@@ -90,7 +90,6 @@ perception = PerceptionInput(
     district_name="Example",
     current_description="...",
     problem_summary="...",
-    constraints_and_needs="...",
     survey_summary="...",
     representative_images=["inputs/site_plan.png", "inputs/node_photo_01.jpg"],
 )
