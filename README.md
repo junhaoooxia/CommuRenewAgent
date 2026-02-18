@@ -82,6 +82,7 @@ source_specs = [
     {"source": "pdf", "pdf_path": "knowledge/policies.pdf", "type": "policy"},
     {"source": "jsonl", "jsonl_path": "knowledge/design_method.jsonl", "type": "design_method"},
     {"source": "jsonl", "jsonl_path": "knowledge/trend_strategy.jsonl", "type": "trend_strategy"},
+    {"source": "word", "word_path": "knowledge/community_guideline.docx", "type": "policy"},
 ]
 
 index_knowledge_base(source_specs, embedding_backend="openai_qwen")
@@ -107,10 +108,11 @@ retrieval_payload, generation_output = generate_design_schemes(
 - Default embedding backend is `openai_qwen`: Qwen `qwen3-vl-embedding` is used for both text (`input=[{"text": ...}]`) and image (`input=[{"image": ...}]`) with 2560-d alignment for direct multimodal retrieval.
 - The only fallback backend is `simple` (deterministic local embedding) for environments without DashScope credentials.
 - JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<repo_root>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../CommuRenewAgent/ref/design_method_images/a.jpg`).
+- Word ingestion is supported for `.docx` sources via `{"source": "word", "word_path": "...docx"}` (legacy `.doc` should be converted to `.docx`).
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
-- Offline indexing now caches a fingerprint of `knowledge/` + `ref/` and reuses existing vectors when files are unchanged, avoiding unnecessary re-embedding.
+- Offline indexing now keeps per-source state and compares current vs previous sources to apply incremental updates (add/update/remove) directly in `knowledge.db`, without re-parsing unchanged PDFs/JSONL/Word files.
 - Offline embedding generation uses multithreading (`max_workers=10`) during node indexing to speed up large knowledge-base builds.
 - Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.

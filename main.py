@@ -68,13 +68,19 @@ if __name__ == "__main__":
             elif path.suffix.lower() == ".jsonl":
                 default_type = "design_method" if "design_method" in path.stem else ("trend_strategy" if "trend_strategy" in path.stem else "other")
                 source_specs.append({"source": "jsonl", "jsonl_path": str(path), "type": default_type})
+            elif path.suffix.lower() in {".docx", ".doc"}:
+                stem = path.stem.lower()
+                node_type = "policy" if "polic" in stem else ("design_method" if "design" in stem else ("trend_strategy" if "trend" in stem else "other"))
+                source_specs.append({"source": "word", "word_path": str(path), "type": node_type})
 
     detected_pdf_count = sum(1 for s in source_specs if s.get("source") == "pdf")
     detected_jsonl_count = sum(1 for s in source_specs if s.get("source") == "jsonl")
+    detected_word_count = sum(1 for s in source_specs if s.get("source") == "word")
     logger.info(
-        "Detected sources in knowledge/: pdf=%d, jsonl=%d, total=%d",
+        "Detected sources in knowledge/: pdf=%d, jsonl=%d, word=%d, total=%d",
         detected_pdf_count,
         detected_jsonl_count,
+        detected_word_count,
         len(source_specs),
     )
 

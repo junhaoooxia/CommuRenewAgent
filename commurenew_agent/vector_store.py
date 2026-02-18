@@ -83,6 +83,39 @@ class SQLiteVectorStore:
             )
         self.conn.commit()
 
+    def delete_nodes(self, node_ids: list[str]) -> None:
+        if not node_ids:
+            return
+        placeholders = ",".join(["?"] * len(node_ids))
+        self.conn.execute(f"DELETE FROM knowledge_node_images WHERE node_id IN ({placeholders})", tuple(node_ids))
+        self.conn.execute(f"DELETE FROM knowledge_nodes WHERE id IN ({placeholders})", tuple(node_ids))
+        self.conn.commit()
+
+    def clear_all(self) -> None:
+        self.conn.execute("DELETE FROM knowledge_node_images")
+        self.conn.execute("DELETE FROM knowledge_nodes")
+        self.conn.commit()
+
+    def count_nodes(self) -> int:
+        row = self.conn.execute("SELECT COUNT(1) FROM knowledge_nodes").fetchone()
+        return int(row[0]) if row else 0
+
+    def iter_nodes(self) -> list[KnowledgeNode]:
+        rows = self.conn.execute(
+            "SELECT id, type, title, main_text, images_json, metadata_json FROM knowledge_nodes ORDER BY id"
+        ).fetchall()
+        return [
+            KnowledgeNode(
+                id=row[0],
+                type=row[1],
+                title=row[2],
+                main_text=row[3],
+                images=json.loads(row[4]),
+                metadata=json.loads(row[5]),
+            )
+            for row in rows
+        ]
+
     def search_text(self, query_embedding: np.ndarray, top_k: int = 15) -> List[RetrievedNode]:
         rows = self.conn.execute(
             "SELECT id, type, title, main_text, images_json, metadata_json, text_embedding FROM knowledge_nodes"
