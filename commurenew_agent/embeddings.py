@@ -38,14 +38,14 @@ class QwenMultimodalEmbedder:
             raise ImportError("DASHSCOPE_API_KEY is required for openai_qwen backend")
 
     def embed_text(self, text: str) -> np.ndarray:
+        safe_text = (text or "").strip() or "<empty>"
         resp = self.dashscope.MultiModalEmbedding.call(
             api_key=os.getenv("DASHSCOPE_API_KEY"),
             model=self.config.qwen_model_name,
-            input=[{"text": text}],
+            input=[{"text": safe_text}],
             dimension=self.config.dim,
         )
         if getattr(resp, "status_code", None) != 200:
-            print(resp)
             raise RuntimeError(f"Qwen text embedding failed: status_code={getattr(resp, 'status_code', None)}")
         vec = np.array(resp.output["embeddings"][0]["embedding"], dtype=np.float32)
         return self._fit_dim(self._normalize(vec))
@@ -63,7 +63,6 @@ class QwenMultimodalEmbedder:
             dimension=self.config.dim,
         )
         if getattr(resp, "status_code", None) != 200:
-            print(resp)
             raise RuntimeError(f"Qwen image embedding failed: status_code={getattr(resp, 'status_code', None)}")
         vec = np.array(resp.output["embeddings"][0]["embedding"], dtype=np.float32)
         return self._fit_dim(self._normalize(vec))
@@ -123,8 +122,9 @@ class SimpleMultimodalEmbedder:
         self.config = config or EmbeddingConfig(backend="simple")
 
     def embed_text(self, text: str) -> np.ndarray:
+        safe_text = (text or "").strip() or "<empty>"
         vec = np.zeros(self.config.dim, dtype=np.float32)
-        for token in text.lower().split():
+        for token in safe_text.lower().split():
             digest = hashlib.sha256(token.encode("utf-8")).digest()
             for i in range(0, len(digest), 2):
                 idx = int.from_bytes(digest[i : i + 2], "little") % self.config.dim

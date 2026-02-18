@@ -6,8 +6,32 @@ from typing import Iterable
 import numpy as np
 
 from .embeddings import EmbeddingConfig, get_embedder
-from .models import PerceptionInput, RetrievalResult
+from .models import PerceptionInput, RetrievalResult, RetrievedNode
 from .vector_store import SQLiteVectorStore
+
+
+def _safe_text(text: str) -> str:
+    return (text or "").strip() or "<empty>"
+
+
+def _collapse_children_to_parents(nodes: list[RetrievedNode]) -> list[RetrievedNode]:
+    grouped: dict[str, RetrievedNode] = {}
+    for node in nodes:
+        parent_id = node.metadata.get("parent_id") or node.id
+        parent_text = node.metadata.get("parent_text") or node.text
+        if parent_id not in grouped or node.score > grouped[parent_id].score:
+            merged_metadata = dict(node.metadata)
+            merged_metadata["matched_child_id"] = node.id
+            grouped[parent_id] = RetrievedNode(
+                id=parent_id,
+                type=node.type,
+                title=node.title,
+                text=parent_text,
+                images=node.images,
+                score=node.score,
+                metadata=merged_metadata,
+            )
+    return sorted(grouped.values(), key=lambda n: n.score, reverse=True)
 
 
 def retrieve_relevant_nodes(
@@ -17,11 +41,13 @@ def retrieve_relevant_nodes(
     embedding_backend: str = "openai_qwen",
 ) -> RetrievalResult:
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
-    query_emb = embedder.embed_text(perception.to_text_block())
+    query_emb = embedder.embed_text(_safe_text(perception.to_text_block()))
 
     store = SQLiteVectorStore(db_path=db_path)
-    retrieved = store.search_text(query_embedding=query_emb, top_k=top_k)
+    retrieved_children = store.search_text(query_embedding=query_emb, top_k=max(top_k * 3, 30))
     store.close()
+
+    retrieved = _collapse_children_to_parents(retrieved_children)[:top_k]
 
     result = RetrievalResult()
     for node in retrieved:
@@ -41,7 +67,7 @@ def rank_site_images_for_scene(
     top_k: int = 2,
 ) -> list[str]:
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
-    text_emb = embedder.embed_text(scene_text)
+    text_emb = embedder.embed_text(_safe_text(scene_text))
 
     scored: list[tuple[float, str]] = []
     for img_path in representative_images:
@@ -65,7 +91,7 @@ def rank_method_images_for_scene(
     top_k: int = 3,
 ) -> list[str]:
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
-    text_emb = embedder.embed_text(scene_text)
+    text_emb = embedder.embed_text(_safe_text(scene_text))
 
     ref_set = set(referenced_ids)
     candidates = retrieval.retrieved_methods + retrieval.retrieved_trend_strategies

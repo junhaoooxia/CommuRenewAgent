@@ -109,6 +109,8 @@ retrieval_payload, generation_output = generate_design_schemes(
 - The only fallback backend is `simple` (deterministic local embedding) for environments without DashScope credentials.
 - JSONL ingestion supports records with `id/type/title/main_text/images`; relative image paths are normalized (including Windows `\` separators) and resolved as absolute paths under `<repo_root>/ref/...` (e.g. `design_method_images\a.jpg` -> `/.../CommuRenewAgent/ref/design_method_images/a.jpg`).
 - Word ingestion is supported for `.docx` sources via `{"source": "word", "word_path": "...docx"}` (legacy `.doc` should be converted to `.docx`).
+- Policy ingestion now uses Chinese-structure chunking (chapter/section/article/item/paragraph boundaries) followed by length chunking, and stores parent-child metadata (`parent_id`, `item_path`, `page_range`, etc.) for parent-context retrieval.
+- PDF text extraction now includes an anti-garbled fallback: if PyMuPDF output looks mojibake-heavy, it will try `pdfplumber` text extraction before chunking.
 - Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
 - For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
