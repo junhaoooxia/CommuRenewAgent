@@ -45,6 +45,7 @@ class QwenMultimodalEmbedder:
             dimension=self.config.dim,
         )
         if getattr(resp, "status_code", None) != 200:
+            print(resp)
             raise RuntimeError(f"Qwen text embedding failed: status_code={getattr(resp, 'status_code', None)}")
         vec = np.array(resp.output["embeddings"][0]["embedding"], dtype=np.float32)
         return self._fit_dim(self._normalize(vec))
@@ -62,6 +63,7 @@ class QwenMultimodalEmbedder:
             dimension=self.config.dim,
         )
         if getattr(resp, "status_code", None) != 200:
+            print(resp)
             raise RuntimeError(f"Qwen image embedding failed: status_code={getattr(resp, 'status_code', None)}")
         vec = np.array(resp.output["embeddings"][0]["embedding"], dtype=np.float32)
         return self._fit_dim(self._normalize(vec))
