@@ -120,3 +120,4 @@ retrieval_payload, generation_output = generate_design_schemes(
 - Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
 - Text retrieval keeps up to 20 items for each knowledge type (`retrieved_methods`, `retrieved_policies`, `retrieved_trend_strategies`).
 - If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
+- New `build_visual_evidence(site_images, existing=None)` builds per-image structured visual evidence JSON and caches it in `PerceptionInput.visual_evidence`; if cached evidence exists, it is reused directly.

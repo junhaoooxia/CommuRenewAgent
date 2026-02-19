@@ -7,6 +7,7 @@ from .knowledge_ingestion import build_knowledge_base
 from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
 from .retrieval import rank_method_images_for_scene, rank_site_images_for_scene, retrieve_relevant_nodes
+from .vision_evidence import build_visual_evidence
 
 
 def index_knowledge_base(
@@ -51,7 +52,14 @@ def generate_design_schemes(
     image_model: str = "gemini-3-pro-image-preview",
     image_output_dir: str | Path = "data/generated_images",
 ) -> tuple[dict, GenerationOutput]:
-    """Online: retrieve relevant knowledge and generate three design schemes."""
+    """主入口：如果 perception.visual_evidence 已存在则直接复用；否则基于 site_images 构建。"""
+    if perception.site_images:
+        perception.visual_evidence = build_visual_evidence(
+            site_images=perception.site_images,
+            existing=perception.visual_evidence,
+            model=model,
+        )
+
     # First stage: RAG retrieval conditioned on project perception input.
     retrieval = retrieve_relevant_nodes(
         perception=perception,

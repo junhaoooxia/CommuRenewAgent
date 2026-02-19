@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any, Dict, List, Literal, Optional
 
 NodeType = Literal["policy", "design_method", "trend_strategy", "other"]
@@ -22,18 +23,21 @@ class PerceptionInput:
     current_description: str
     problem_summary: str
     survey_summary: str
+    site_images: List[str] = field(default_factory=list)
     representative_images: List[str] = field(default_factory=list)
+    visual_evidence: Dict[str, Any] = field(default_factory=dict)
 
     def to_text_block(self) -> str:
         # Flatten project context into a single textual query prompt for embedding/retrieval.
-        return "\n".join(
-            [
-                f"District: {self.district_name}",
-                f"Current Situation: {self.current_description}",
-                f"Problems: {self.problem_summary}",
-                f"Survey Summary: {self.survey_summary}",
-            ]
-        )
+        blocks = [
+            f"District: {self.district_name}",
+            f"Current Situation: {self.current_description}",
+            f"Problems: {self.problem_summary}",
+            f"Survey Summary: {self.survey_summary}",
+        ]
+        if self.visual_evidence:
+            blocks.append("Visual Evidence JSON: " + json.dumps(self.visual_evidence, ensure_ascii=False))
+        return "\n".join(blocks)
 
 
 @dataclass
