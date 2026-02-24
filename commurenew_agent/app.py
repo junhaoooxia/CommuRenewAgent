@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 from .image_generation import edit_image_with_gemini_nanobanana
@@ -10,6 +11,8 @@ from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
 from .retrieval import rank_method_images_for_scene, retrieve_relevant_nodes
 from .vision_evidence import build_visual_evidence
+
+logger = logging.getLogger(__name__)
 
 
 def _discover_site_images(default_dir: str | Path = "inputs/siteImgs") -> list[str]:
@@ -59,7 +62,9 @@ def index_knowledge_base(
 ) -> int:
     """Offline: parse PDFs/JSONL and persist multimodal knowledge nodes + embeddings."""
     # Offline entrypoint: called when knowledge sources change.
-    return build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
+    count = build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
+    logger.info("[app] knowledge indexing finished. nodes=%s", count)
+    return count
 
 
 def _resolve_selected_site_image_paths(selected_images: list[str], site_images: list[str]) -> list[str]:
@@ -121,6 +126,7 @@ def _post_rank_scene_images(generated: GenerationOutput, retrieval, embedding_ba
                 db_path=db_path,
                 top_k=3,
             )
+            logger.info("[app] scene post-rank done. scheme=%s node=%s references=%s", scheme.name, scene.node_name, len(scene.reference_example_images))
 
 def generate_design_schemes(
     perception: PerceptionInput,
@@ -141,6 +147,7 @@ def generate_design_schemes(
 
     if not perception.site_images:
         perception.site_images = _discover_site_images()
+        logger.info("[app] discovered site images count=%s", len(perception.site_images))
 
     if perception.site_images:
         signature = _site_images_signature(perception.site_images)
@@ -158,6 +165,7 @@ def generate_design_schemes(
                 current_description=perception.current_description,
             )
             _save_visual_evidence_cache(cache_path=cache_path, signature=signature, visual_evidence=perception.visual_evidence)
+        logger.info("[app] visual evidence ready. images=%s", len((perception.visual_evidence or {}).get("images", [])))
 
     # First stage: RAG retrieval conditioned on project perception input.
     retrieval = retrieve_relevant_nodes(
@@ -168,7 +176,9 @@ def generate_design_schemes(
     )
     # Second stage: reasoning/generation over retrieved context.
     generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
+    logger.info("[app] reasoning finished. schemes=%s", len(generated.scheme_list))
     _post_rank_scene_images(generated, retrieval, embedding_backend, db_path)
+    logger.info("[app] post rank finished.")
 
     if generate_images:
         output_root = Path(image_output_dir)
@@ -183,10 +193,12 @@ def generate_design_schemes(
                         model=image_model,
                     )
                     scene.generated_images.append(edited)
+                    logger.info("[app] generated image saved. scheme=%s scene=%s source=%s output=%s", scheme_idx, scene_idx, src, edited)
     # Return JSON-serializable retrieval payload for UI/debugging.
     retrieval_payload = {
         "retrieved_methods": [node.__dict__ for node in retrieval.retrieved_methods],
         "retrieved_policies": [node.__dict__ for node in retrieval.retrieved_policies],
         "retrieved_trend_strategies": [node.__dict__ for node in retrieval.retrieved_trend_strategies],
     }
+    logger.info("[app] generate_design_schemes finished.")
     return retrieval_payload, generated

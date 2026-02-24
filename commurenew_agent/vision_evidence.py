@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 NODE_TYPE_CHOICES: List[str] = [
@@ -217,9 +220,11 @@ def build_visual_evidence(
     构建（或复用）视觉证据 JSON。
     """
     if existing and isinstance(existing, dict) and existing.get("images"):
+        logger.info("[vision_evidence] reuse existing visual evidence. images=%s", len(existing.get("images", [])))
         return existing
 
     if not site_images:
+        logger.info("[vision_evidence] no site images, skip evidence build.")
         return {"images": []}
 
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -247,4 +252,5 @@ def build_visual_evidence(
 
     results: List[Dict[str, Any]] = [item for item in raw_results if item]
 
+    logger.info("[vision_evidence] build finished. valid_images=%s", len(results))
     return {"images": results}

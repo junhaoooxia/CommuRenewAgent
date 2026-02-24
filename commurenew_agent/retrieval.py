@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterable
 
@@ -8,6 +9,8 @@ import numpy as np
 from .embeddings import EmbeddingConfig, get_embedder
 from .models import PerceptionInput, RetrievalResult, RetrievedNode
 from .vector_store import SQLiteVectorStore
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_text(text: str) -> str:
@@ -40,6 +43,7 @@ def retrieve_relevant_nodes(
     top_k: int = 20,
     embedding_backend: str = "openai_qwen",
 ) -> RetrievalResult:
+    logger.info("[retrieval] retrieve start. top_k=%s backend=%s", top_k, embedding_backend)
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     query_emb = embedder.embed_text(_safe_text(perception.to_text_block()))
 
@@ -60,6 +64,12 @@ def retrieve_relevant_nodes(
     result.retrieved_methods = result.retrieved_methods[:top_k]
     result.retrieved_policies = result.retrieved_policies[:top_k]
     result.retrieved_trend_strategies = result.retrieved_trend_strategies[:top_k]
+    logger.info(
+        "[retrieval] retrieve done. methods=%s policies=%s trends=%s",
+        len(result.retrieved_methods),
+        len(result.retrieved_policies),
+        len(result.retrieved_trend_strategies),
+    )
     return result
 
 
@@ -69,6 +79,8 @@ def rank_site_images_for_scene(
     embedding_backend: str = "openai_qwen",
     top_k: int = 2,
 ) -> list[str]:
+    site_images = list(site_images)
+    logger.info("[retrieval] rank_site_images start. candidates=%s", len(site_images))
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     text_emb = embedder.embed_text(_safe_text(scene_text))
 
@@ -82,7 +94,9 @@ def rank_site_images_for_scene(
         scored.append((score, str(p)))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [p for _, p in scored[:top_k]]
+    selected = [p for _, p in scored[:top_k]]
+    logger.info("[retrieval] rank_site_images done. selected=%s", len(selected))
+    return selected
 
 
 def rank_method_images_for_scene(
@@ -93,6 +107,8 @@ def rank_method_images_for_scene(
     embedding_backend: str = "openai_qwen",
     top_k: int = 3,
 ) -> list[str]:
+    referenced_ids = list(referenced_ids)
+    logger.info("[retrieval] rank_method_images start. referenced_ids=%s", len(referenced_ids))
     embedder = get_embedder(EmbeddingConfig(backend=embedding_backend))
     text_emb = embedder.embed_text(_safe_text(scene_text))
 
@@ -116,4 +132,5 @@ def rank_method_images_for_scene(
             deduped.append(path)
         if len(deduped) >= top_k:
             break
+    logger.info("[retrieval] rank_method_images done. selected=%s", len(deduped))
     return deduped

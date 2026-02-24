@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
 import os
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from .models import DesignScheme, GenerationOutput, PerceptionInput, RetrievalResult, SchemeNodeScene
+
+logger = logging.getLogger(__name__)
 
 
 SCHEME_FOCI = [
@@ -229,6 +232,7 @@ def _generate_single_scheme_with_openai(
 
     prompt = _build_single_scheme_prompt(perception, retrieval, scheme_name, scheme_focus)
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    logger.info("[reasoning] request single scheme. direction=%s focus=%s model=%s", scheme_name, scheme_focus, model)
     response = client.responses.create(
         model=model,
         input=[
@@ -245,6 +249,7 @@ def _generate_single_scheme_with_openai(
     )
     text = response.output_text
     parsed = SchemeSchema.model_validate_json(text)
+    logger.info("[reasoning] parsed single scheme. name=%s scenes=%s", parsed.name, len(parsed.node_scenes))
 
     scheme = DesignScheme(
         name=parsed.name,
@@ -327,6 +332,7 @@ def generate_schemes_with_reasoning(
 ) -> GenerationOutput:
     """Generate three schemes iteratively (one call per scheme focus) for better controllability."""
     if not os.getenv("OPENAI_API_KEY"):
+        logger.warning("[reasoning] OPENAI_API_KEY not set, using fallback generation.")
         return _fallback_generation(perception, retrieval)
 
     scheme_list: List[DesignScheme] = []
@@ -341,5 +347,7 @@ def generate_schemes_with_reasoning(
         )
         scheme_list.append(scheme)
         raw_chunks.append({"scheme_name": scheme_name, "raw": raw_text})
+        logger.info("[reasoning] scheme finished. direction=%s output_name=%s", scheme_name, scheme.name)
 
+    logger.info("[reasoning] all schemes generated. count=%s", len(scheme_list))
     return GenerationOutput(scheme_list=scheme_list, raw_response=json.dumps(raw_chunks, ensure_ascii=False))
