@@ -65,6 +65,7 @@ class SchemeNodeScene:
     reference_example_images: List[str]
     selected_representative_images: List[str] = field(default_factory=list)
     generated_images: List[str] = field(default_factory=list)
+    generated_image_prompts: List[str] = field(default_factory=list)
 
 
 @dataclass

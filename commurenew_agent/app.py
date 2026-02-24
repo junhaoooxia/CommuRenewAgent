@@ -7,7 +7,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .image_generation import edit_image_with_gemini_nanobanana
+from .image_generation import edit_image_with_gemini_nanobanana_with_prompt
 from .knowledge_ingestion import build_knowledge_base
 from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
@@ -199,7 +199,7 @@ def generate_design_schemes(
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_map = {
                 executor.submit(
-                    edit_image_with_gemini_nanobanana,
+                    edit_image_with_gemini_nanobanana_with_prompt,
                     prompt=scene.desired_image_prompt,
                     source_image_path=src,
                     output_path=out_path,
@@ -211,8 +211,9 @@ def generate_design_schemes(
             for fut in as_completed(future_map):
                 scheme, scene, scheme_idx, scene_idx, src, out_path = future_map[fut]
                 try:
-                    edited = fut.result()
+                    edited, revised_prompt = fut.result()
                     scene.generated_images.append(edited)
+                    scene.generated_image_prompts.append(revised_prompt)
                     logger.info(
                         "[app] generated image saved. scheme=%s scene=%s source=%s output=%s",
                         scheme_idx,

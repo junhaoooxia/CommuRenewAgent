@@ -46,17 +46,25 @@ def _revise_prompt_with_gpt52(source_image_path: Path, desired_image_prompt: str
 
     client = OpenAI(api_key=api_key)
     system = (
-        "你是住区更新图生图提示词改写专家。你要根据输入现场图片与目标需求，"
-        "输出一段可直接用于图像编辑模型的中文prompt。"
-        "必须强调可实施性：如对象是否可以移动/移除、是否会挤占过道、是否影响安全与通行。"
-        "只输出最终prompt文本，不要输出解释。"
+        "你是住区更新场景的图改图提示词改写专家。"
+        "你的任务是：结合用户给出的现场图片和原始文字需求，"
+        "将其改写为一段清晰、具体、可实施的中文图像编辑模型提示词（prompt）。"
+        "你需要在忠实保留原场景基本结构的前提下，明确说明：哪些元素需要保留，哪些可以新增、移动或移除，以及这样做对通行与安全的影响。"
+        "必须强调可实施性：需要考虑对象是否真的可以移动/增建/拆除，是否会挤占过道、占用消防疏散空间、影响视线与出入口安全等。"
+        "生成的内容要适合在“基于现有照片进行图像编辑”的模型中直接使用。"
+        "只输出最终用于图改图的 prompt 文本，不要输出任何解释、分析或分条列表。"
     )
     user = (
-        f"原始需求：{desired_image_prompt}\n\n"
-        f"请改写为真实可落地的图生图prompt，并包含以下约束：\n"
-        f"- {PROMPT_GUARDRAIL}\n"
-        "- 改造应充分考虑可行性，不得提出不现实的大拆大改。\n"
-        "- 不得堵塞主要通道，不得引入明显安全隐患。"
+        f"原始需求（来自上一阶段的空间组织描述）：{desired_image_prompt}\n\n"
+        "请在理解现场图片的基础上，将上述内容改写为一段可直接用于【在原照片基础上进行编辑】的真实可落地图生图/图改图中文 prompt。"
+        "改写时请遵循以下要求：\n"
+        f"- 必须遵守以下安全与合规约束：{PROMPT_GUARDRAIL}\n"
+        "- 改造应充分考虑现实可行性，不得提出不现实的大拆大改或结构性重建，只做局部空间与设施层面的调整和优化。\n"
+        "- 不得堵塞主要通道、出入口和消防通道，不得引入明显安全隐患（如遮挡视线、占用疏散空间、无防护高差等）。\n"
+        "- 在 prompt 中用自然语言清楚描述：需要保留的原有元素（建筑、道路、绿化等）、允许调整或新增的元素（如座椅、花池、照明、非机动车位等），"
+        "以及这些调整后形成的空间关系和人流动线。避免引入与现场环境明显不符的超现实或科幻元素。\n"
+        "- 在风格上应保持与原照片整体视角、构图和时间段（如白天/夜间）大体一致，只对内容和秩序进行优化，而非完全换一个场景。\n"
+        "- 输出一段连续的中文描述，用于直接作为图改图模型的 prompt，不要添加任何解释性语句、前后缀或列表符号。"
     )
 
     try:
@@ -138,14 +146,15 @@ def _concat_side_by_side(original_image: Image.Image, edited_image: Image.Image)
     return canvas
 
 
-def edit_image_with_gemini_nanobanana(
+def edit_image_with_gemini_nanobanana_with_prompt(
     prompt: str,
     source_image_path: str | Path,
     output_path: str | Path,
     model: str = "gemini-3-pro-image-preview",
-) -> str:
+) -> tuple[str, str]:
     """Image-to-image editing via Gemini image generation API.
 
+    Returns (saved_path, revised_prompt).
     Saves a side-by-side comparison image: original(left) + edited(right).
     """
     logger.info("[image_generation] start edit model=%s source=%s", model, source_image_path)
@@ -213,6 +222,22 @@ def edit_image_with_gemini_nanobanana(
             merged = _concat_side_by_side(original, edited)
             merged.save(output_path)
             logger.info("[image_generation] saved side-by-side image -> %s", output_path)
-            return str(output_path)
+            return str(output_path), revised_prompt
 
     raise RuntimeError("Gemini did not return an edited image payload")
+
+
+
+def edit_image_with_gemini_nanobanana(
+    prompt: str,
+    source_image_path: str | Path,
+    output_path: str | Path,
+    model: str = "gemini-3-pro-image-preview",
+) -> str:
+    saved_path, _ = edit_image_with_gemini_nanobanana_with_prompt(
+        prompt=prompt,
+        source_image_path=source_image_path,
+        output_path=output_path,
+        model=model,
+    )
+    return saved_path
