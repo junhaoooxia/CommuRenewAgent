@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import mimetypes
 import os
 from pathlib import Path
@@ -335,19 +336,32 @@ def generate_schemes_with_reasoning(
         logger.warning("[reasoning] OPENAI_API_KEY not set, using fallback generation.")
         return _fallback_generation(perception, retrieval)
 
-    scheme_list: List[DesignScheme] = []
-    raw_chunks: List[dict] = []
-    for scheme_name, scheme_focus in SCHEME_FOCI:
-        scheme, raw_text = _generate_single_scheme_with_openai(
-            perception=perception,
-            retrieval=retrieval,
-            scheme_name=scheme_name,
-            scheme_focus=scheme_focus,
-            model=model,
-        )
-        scheme_list.append(scheme)
-        raw_chunks.append({"scheme_name": scheme_name, "raw": raw_text})
-        logger.info("[reasoning] scheme finished. direction=%s output_name=%s", scheme_name, scheme.name)
+    logger.info("[reasoning] concurrent single-scheme generation start. workers=3")
+    indexed_foci = list(enumerate(SCHEME_FOCI))
+    results: list[tuple[int, str, DesignScheme, str]] = []
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_map = {
+            executor.submit(
+                _generate_single_scheme_with_openai,
+                perception=perception,
+                retrieval=retrieval,
+                scheme_name=scheme_name,
+                scheme_focus=scheme_focus,
+                model=model,
+            ): (idx, scheme_name)
+            for idx, (scheme_name, scheme_focus) in indexed_foci
+        }
+
+        for fut in as_completed(future_map):
+            idx, scheme_name = future_map[fut]
+            scheme, raw_text = fut.result()
+            results.append((idx, scheme_name, scheme, raw_text))
+            logger.info("[reasoning] scheme finished. direction=%s output_name=%s", scheme_name, scheme.name)
+
+    results.sort(key=lambda x: x[0])
+    scheme_list: List[DesignScheme] = [item[2] for item in results]
+    raw_chunks: List[dict] = [{"scheme_name": item[1], "raw": item[3]} for item in results]
 
     logger.info("[reasoning] all schemes generated. count=%s", len(scheme_list))
     return GenerationOutput(scheme_list=scheme_list, raw_response=json.dumps(raw_chunks, ensure_ascii=False))
