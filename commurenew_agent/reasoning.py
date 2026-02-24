@@ -29,10 +29,13 @@ class SceneSchema(BaseModel):
 
 class SchemeSchema(BaseModel):
     name: str
+    renewal_mode: str
+    target_goal: List[str]
     overall_concept: str
+    scheme_text: str
+    expected_effect: List[str]
     key_strategies: List[str]
     referenced_methods: List[str]
-    referenced_example_images: List[str]
     node_scenes: List[SceneSchema]
 
 
@@ -178,8 +181,11 @@ def _build_single_scheme_prompt(
         【补充约束】
         ====================
 
-        - 当前仅生成单方案，方案名固定为：{scheme_name}
+        - 当前仅生成单方案，方向提示为：{scheme_name}
         - 该方案重点方向：{scheme_focus}
+        - 方案名需要你自行拟定，要求更有设计感与表达力，不要直接照抄方向提示。
+        - 必须在 selected_representative_images 中从 visual_evidence 的图片里选择与节点最相关的图片。
+        - selected_representative_images 里必须填写可用于图改图的图片路径。
         - 必须使用检索结果中的方法ID写入 referenced_methods。
         - 输出必须是严格 JSON，且只能输出一个 SchemeSchema 对象（不得包含额外文本）。
 
@@ -198,16 +204,16 @@ def _build_single_scheme_prompt(
 
 
 
-def _build_multimodal_user_input(prompt: str, representative_images: List[str]) -> List[dict]:
-    # Keep image paths out of the textual prompt and pass perception images via multimodal input parts.
+def _build_multimodal_user_input(prompt: str, site_images: List[str]) -> List[dict]:
+    # Keep image paths out of the textual prompt and pass site images via multimodal input parts.
     content: List[dict] = [{"type": "input_text", "text": prompt}]
-    for idx, image_path in enumerate(representative_images, start=1):
+    for idx, image_path in enumerate(site_images, start=1):
         p = Path(image_path)
         if not p.exists():
             continue
         mime_type = mimetypes.guess_type(p.name)[0] or "image/png"
         # Give the model an explicit path label adjacent to each image so it can return exact selections.
-        content.append({"type": "input_text", "text": f"Representative image {idx} path: {image_path}"})
+        content.append({"type": "input_text", "text": f"Site image {idx} path: {image_path}"})
         content.append({"type": "input_image", "image_url": f"data:{mime_type};base64,{base64.b64encode(p.read_bytes()).decode('utf-8')}"})
     return content
 
@@ -232,7 +238,7 @@ def _generate_single_scheme_with_openai(
             },
             {
                 "role": "user",
-                "content": _build_multimodal_user_input(prompt, perception.representative_images),
+                "content": _build_multimodal_user_input(prompt, perception.site_images),
             },
         ],
         temperature=0.4,
@@ -242,10 +248,13 @@ def _generate_single_scheme_with_openai(
 
     scheme = DesignScheme(
         name=parsed.name,
+        renewal_mode=parsed.renewal_mode,
+        target_goal=parsed.target_goal,
         overall_concept=parsed.overall_concept,
+        scheme_text=parsed.scheme_text,
+        expected_effect=parsed.expected_effect,
         key_strategies=parsed.key_strategies,
         referenced_methods=parsed.referenced_methods,
-        referenced_example_images=parsed.referenced_example_images,
         node_scenes=[
             SchemeNodeScene(
                 node_name=n.node_name,
@@ -263,35 +272,46 @@ def _generate_single_scheme_with_openai(
 def _fallback_generation(perception: PerceptionInput, retrieval: RetrievalResult) -> GenerationOutput:
     method_ids = [n.id for n in retrieval.retrieved_methods[:6]]
     kb_image_ids = [img for n in retrieval.retrieved_methods[:3] for img in n.images[:1]]
-    rep_images = perception.representative_images[:2]
+    site_images = perception.site_images[:2]
 
     schemes = []
     for name, focus in SCHEME_FOCI:
         schemes.append(
             DesignScheme(
                 name=name,
+                renewal_mode="综合整治 + 微更新",
+                target_goal=[
+                    "提升步行与公共空间品质",
+                    "完善非机动车停放与充电秩序",
+                    "在可控条件下嵌入智慧物流",
+                ],
                 overall_concept=f"For {perception.district_name}, prioritize {focus} with phased low-impact renewal.",
+                scheme_text=f"该方案以{focus}为主线，先判定更新模式为综合整治与微更新结合，再围绕核心目标组织分期更新策略，并将节点改造与运营管理协同推进。",
+                expected_effect=[
+                    "公共空间使用效率与舒适性提升",
+                    "交通冲突与无序停放问题缓解",
+                    "居民对更新成效感知增强",
+                ],
                 key_strategies=[
                     f"Apply problem-oriented methods for {focus}.",
                     "Respect policy constraints and residents' survey priorities.",
                     "Introduce trend strategies where they improve operations and livability.",
                 ],
                 referenced_methods=method_ids,
-                referenced_example_images=kb_image_ids,
                 node_scenes=[
                     SchemeNodeScene(
                         node_name="Community Entrance",
                         description="Reorganize frontage, greenery, and slow traffic sharing.",
                         desired_image_prompt="Edit the source node photo into an upgraded residential entrance with clearer pedestrian priority, planting and integrated smart-delivery elements.",
                         reference_example_images=kb_image_ids[:2],
-                        selected_representative_images=rep_images[:1],
+                        selected_representative_images=site_images[:1],
                     ),
                     SchemeNodeScene(
                         node_name="Central Open Space",
                         description="Create age-inclusive public activity area with shading and flexible seating.",
                         desired_image_prompt="Edit the source node photo into a central plaza renewal with diverse seating, canopy shading, children and elderly activity zones.",
                         reference_example_images=kb_image_ids[1:3],
-                        selected_representative_images=rep_images[1:2],
+                        selected_representative_images=site_images[1:2],
                     ),
                 ],
             )

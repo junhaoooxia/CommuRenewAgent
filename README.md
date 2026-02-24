@@ -92,7 +92,7 @@ perception = PerceptionInput(
     current_description="...",
     problem_summary="...",
     survey_summary="...",
-    representative_images=["inputs/site_plan.png", "inputs/node_photo_01.jpg"],
+    site_images=["inputs/siteImgs/社区出入口-1.jpg", "inputs/siteImgs/室外活动场地-4.jpg"],
 )
 
 retrieval_payload, generation_output = generate_design_schemes(
@@ -111,13 +111,13 @@ retrieval_payload, generation_output = generate_design_schemes(
 - Word ingestion is supported for `.docx` sources via `{"source": "word", "word_path": "...docx"}` (legacy `.doc` should be converted to `.docx`).
 - Knowledge ingestion now uses a simpler paragraph-first + length-limited chunking strategy (with small overlap) to reduce indexing cost.
 - PDF text extraction now includes an anti-garbled fallback: if PyMuPDF output looks mojibake-heavy, it will try `pdfplumber` text extraction before chunking.
-- Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `representative_images` should be edited for each node scene.
+- Image editing uses Gemini API (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`). The reasoning layer selects which files from `site_images` should be edited for each node scene.
 - For `openai_qwen` embeddings, set `DASHSCOPE_API_KEY` (Qwen text+vision embedding).
 - For `openai_qwen` embeddings, input images are auto-resized proportionally when they exceed Qwen size limit (5070KB), targeting the upper bound without exceeding it.
 - Offline indexing now keeps per-source + per-node state and compares current vs previous sources to apply incremental updates (add/update/remove) directly in `knowledge.db`; unchanged sources are skipped, and unchanged nodes/images are not re-embedded.
 - Offline embedding generation uses multithreading (`max_workers=10`) during node indexing to speed up large knowledge-base builds.
 - To avoid Qwen `text input should not be empty` errors, empty node text fields are automatically replaced with a safe fallback (`title` / `id`) during embedding.
-- Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.representative_images`, and scene->method images from already-retrieved method/strategy image pools).
+- Retrieval is now split by objective: text-plan generation recalls from text embeddings only (policy/method/strategy text), while node-image outputs are post-ranked in two steps (scene->site images from `perception.site_images`, and scene->method images from already-retrieved method/strategy image pools).
 - Text retrieval keeps up to 20 items for each knowledge type (`retrieved_methods`, `retrieved_policies`, `retrieved_trend_strategies`).
-- If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.representative_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
+- If `OPENAI_API_KEY` is set, reasoning calls `gpt-5.2` by default and sends `perception.site_images` as multimodal image inputs (not injected into the prompt text); otherwise a deterministic fallback generator is used.
 - New `build_visual_evidence(site_images, existing=None)` builds per-image structured visual evidence JSON and caches it in `PerceptionInput.visual_evidence`; if cached evidence exists, it is reused directly.

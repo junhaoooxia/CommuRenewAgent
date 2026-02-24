@@ -71,7 +71,7 @@ def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: 
             scene_query = f"{scene.node_name}\n{scene.description}\n{scene.desired_image_prompt}"
             scene.selected_representative_images = rank_site_images_for_scene(
                 scene_text=scene_query,
-                representative_images=perception.representative_images,
+                site_images=perception.site_images,
                 embedding_backend=embedding_backend,
                 top_k=2,
             )

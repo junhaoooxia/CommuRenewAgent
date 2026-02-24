@@ -24,7 +24,6 @@ class PerceptionInput:
     problem_summary: str
     survey_summary: str
     site_images: List[str] = field(default_factory=list)
-    representative_images: List[str] = field(default_factory=list)
     visual_evidence: Dict[str, Any] = field(default_factory=dict)
 
     def to_text_block(self) -> str:
@@ -71,10 +70,13 @@ class SchemeNodeScene:
 @dataclass
 class DesignScheme:
     name: str
+    renewal_mode: str
+    target_goal: List[str]
     overall_concept: str
+    scheme_text: str
+    expected_effect: List[str]
     key_strategies: List[str]
     referenced_methods: List[str]
-    referenced_example_images: List[str]
     node_scenes: List[SchemeNodeScene]
 
 

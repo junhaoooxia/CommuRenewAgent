@@ -211,7 +211,7 @@ if __name__ == "__main__":
             ——体现“就近、便捷”诉求，同时要求安全与隐私可控。
         """,
 
-        representative_images=[]
+        site_images=[]
     )
 
     retrieval, output = generate_design_schemes(

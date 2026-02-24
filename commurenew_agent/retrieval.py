@@ -65,7 +65,7 @@ def retrieve_relevant_nodes(
 
 def rank_site_images_for_scene(
     scene_text: str,
-    representative_images: Iterable[str],
+    site_images: Iterable[str],
     embedding_backend: str = "openai_qwen",
     top_k: int = 2,
 ) -> list[str]:
@@ -73,7 +73,7 @@ def rank_site_images_for_scene(
     text_emb = embedder.embed_text(_safe_text(scene_text))
 
     scored: list[tuple[float, str]] = []
-    for img_path in representative_images:
+    for img_path in site_images:
         p = Path(img_path)
         if not p.exists():
             continue

@@ -14,7 +14,7 @@ def edit_image_with_gemini_nanobanana(
 ) -> str:
     """Image-to-image editing via Gemini ("nanobanana" style workflow).
 
-    The source image is taken from perception.representative_images selected by reasoning.
+    The source image is taken from perception.site_images selected by reasoning.
     """
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
