@@ -46,9 +46,10 @@ def _parse_file_name(image_path: str) -> Dict[str, str]:
     file_name = p.name
     stem = p.stem
 
+    # 新格式："类型-编号"，例如 "室外活动场地-4"
     parts = re.split(r"[-_－]", stem, maxsplit=1)
-    image_id = parts[0]
-    node_type_hint = parts[1] if len(parts) > 1 else ""
+    node_type_hint = parts[0] if len(parts) > 0 else ""
+    image_id = parts[1] if len(parts) > 1 else ""
 
     m = re.match(r"(\d+)", image_id)
     if m:
@@ -119,8 +120,12 @@ def _build_single_image_evidence(
     client: OpenAI,
     model: str,
     image_path: str,
+    cnt: int,
+    district_name: str = "",
+    current_description: str = "",
 ) -> Optional[Dict[str, Any]]:
     info = _parse_file_name(image_path)
+    info["image_id"] = str(cnt)
     data_url = _encode_image_to_data_url(image_path)
     if not data_url:
         return None
@@ -136,7 +141,7 @@ def _build_single_image_evidence(
     user_text = f"""
 现在有一张住区现场照片，请你根据图片内容输出一个 JSON 对象，字段说明如下：
 
-- image_id: 使用文件名中的数字编号，例如文件名为 "001-社区出入口.jpg" 时，image_id 应为 "001"（字符串）。
+- image_id: 使用本次输入图片的顺序编号（从 1 开始递增）的字符串。当前这张图的 image_id 应为 "{cnt}"。
 - file_name: 原始文件名，例如 "001-社区出入口.jpg"。
 - node_type: 使用中文类别，从以下枚举中选择一个，除非你有特别理由，否则优先使用文件名中的类型作为默认值：
   [{node_type_choices_str}]
@@ -163,8 +168,14 @@ def _build_single_image_evidence(
 当前图片的文件名为：
 {info["file_name"]}
 
+当前项目小区名称为：
+{district_name}
+
+当前项目现状描述为：
+{current_description}
+
 其中：
-- 文件名里的编号部分是 "{info["image_id"]}"，请将其作为 image_id。
+- 本次顺序编号（cnt）是 "{cnt}"，请将其作为 image_id。
 - 文件名里的类型部分是 "{info["node_type_hint"]}"（如果它正好属于可选的 node_type 枚举，请优先使用它作为 node_type 的默认值）。
 """
 
@@ -198,6 +209,8 @@ def build_visual_evidence(
     site_images: List[str],
     existing: Optional[Dict[str, Any]] = None,
     model: str = "gpt-5.2",
+    district_name: str = "",
+    current_description: str = "",
 ) -> Dict[str, Any]:
     """
     构建（或复用）视觉证据 JSON。
@@ -215,9 +228,19 @@ def build_visual_evidence(
     client = OpenAI(api_key=api_key)
     results: List[Dict[str, Any]] = []
 
+    cnt = 0
     for image_path in site_images:
-        evidence = _build_single_image_evidence(client, model, image_path)
+        cnt += 1
+        evidence = _build_single_image_evidence(
+            client=client,
+            model=model,
+            image_path=image_path,
+            cnt=cnt,
+            district_name=district_name,
+            current_description=current_description,
+        )
         if evidence:
+            evidence["image_id"] = str(cnt)
             results.append(evidence)
 
     return {"images": results}

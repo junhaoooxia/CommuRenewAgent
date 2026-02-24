@@ -58,6 +58,8 @@ def generate_design_schemes(
             site_images=perception.site_images,
             existing=perception.visual_evidence,
             model=model,
+            district_name=perception.district_name,
+            current_description=perception.current_description,
         )
 
     # First stage: RAG retrieval conditioned on project perception input.
