@@ -43,10 +43,10 @@ def _to_serializable_generation(output) -> dict:
     }
 
 
-def _save_output(retrieval: dict, output_dict: dict, logger: logging.Logger) -> Path:
+def _save_output(retrieval: dict, output_dict: dict, logger: logging.Logger, result_timestamp: str) -> Path:
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    output_path = output_dir / f"result_{result_timestamp}.json"
     payload = {"retrieval": retrieval, "generation": output_dict}
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Saved final result to: %s", output_path)
@@ -55,6 +55,7 @@ def _save_output(retrieval: dict, output_dict: dict, logger: logging.Logger) -> 
 
 if __name__ == "__main__":
     logger = _setup_logger()
+    result_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     logger.info("Step 1/4: Discovering knowledge sources under ./knowledge by file extension")
     knowledge_dir = Path("knowledge")
@@ -220,6 +221,8 @@ if __name__ == "__main__":
         perception=perception,
         # Set to True after configuring GEMINI_API_KEY/GOOGLE_API_KEY for img2img outputs.
         generate_images=True,
+        image_output_dir="output",
+        result_timestamp=result_timestamp,
     )
 
     logger.info(
@@ -232,7 +235,7 @@ if __name__ == "__main__":
 
     logger.info("Step 4/4: Saving results to output directory")
     output_dict = _to_serializable_generation(output)
-    saved_path = _save_output(retrieval, output_dict, logger)
+    saved_path = _save_output(retrieval, output_dict, logger, result_timestamp=result_timestamp)
 
     print("\n=== Retrieval ===")
     print(json.dumps(retrieval, ensure_ascii=False, indent=2))

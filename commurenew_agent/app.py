@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -137,7 +138,8 @@ def generate_design_schemes(
     embedding_backend: str = "openai_qwen",
     generate_images: bool = False,
     image_model: str = "gemini-3-pro-image-preview",
-    image_output_dir: str | Path = "data/generated_images",
+    image_output_dir: str | Path = "output",
+    result_timestamp: str | None = None,
 ) -> tuple[dict, GenerationOutput]:
     """主入口：如果 perception.visual_evidence 已存在则直接复用；否则基于 site_images 构建。"""
     # Backward compatibility: if perception has no site_images attribute, auto discover default folder.
@@ -182,7 +184,8 @@ def generate_design_schemes(
     logger.info("[app] post rank finished.")
 
     if generate_images:
-        output_root = Path(image_output_dir)
+        timestamp = result_timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_root = Path(image_output_dir) / f"result_{timestamp}"
         tasks = []
         for scheme_idx, scheme in enumerate(generated.scheme_list, start=1):
             for scene_idx, scene in enumerate(scheme.node_scenes, start=1):
