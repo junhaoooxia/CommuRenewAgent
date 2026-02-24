@@ -62,6 +62,49 @@ def index_knowledge_base(
     return build_knowledge_base(source_specs=source_specs, db_path=db_path, embedding_backend=embedding_backend)
 
 
+def _resolve_selected_site_image_paths(selected_images: list[str], site_images: list[str]) -> list[str]:
+    """Resolve LLM-selected image labels/filenames to actual site image paths."""
+    if not selected_images:
+        return []
+
+    resolved: list[str] = []
+    site_map_by_name = {Path(p).name.lower(): p for p in site_images}
+
+    for item in selected_images:
+        candidate = str(item).strip()
+        if not candidate:
+            continue
+
+        # 1) direct path exists
+        cpath = Path(candidate)
+        if cpath.exists():
+            resolved.append(str(cpath))
+            continue
+
+        # 2) exact entry in known site_images
+        if candidate in site_images:
+            resolved.append(candidate)
+            continue
+
+        # 3) basename lookup (case-insensitive), common when model returns only filename
+        hit = site_map_by_name.get(Path(candidate).name.lower())
+        if hit:
+            resolved.append(hit)
+            continue
+
+        # keep original for observability; downstream may still report missing file explicitly
+        resolved.append(candidate)
+
+    # de-duplicate while preserving order
+    deduped: list[str] = []
+    seen = set()
+    for pth in resolved:
+        key = pth.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(pth)
+    return deduped
 
 
 def _post_rank_scene_images(generated: GenerationOutput, retrieval, embedding_backend: str, db_path: str | Path) -> None:
@@ -131,7 +174,7 @@ def generate_design_schemes(
         output_root = Path(image_output_dir)
         for scheme_idx, scheme in enumerate(generated.scheme_list, start=1):
             for scene_idx, scene in enumerate(scheme.node_scenes, start=1):
-                for src_idx, src in enumerate(scene.selected_representative_images, start=1):
+                for src_idx, src in enumerate(_resolve_selected_site_image_paths(scene.selected_representative_images, perception.site_images), start=1):
                     out_path = output_root / f"scheme_{scheme_idx}" / f"scene_{scene_idx}_src_{src_idx}.png"
                     edited = edit_image_with_gemini_nanobanana(
                         prompt=scene.desired_image_prompt,
