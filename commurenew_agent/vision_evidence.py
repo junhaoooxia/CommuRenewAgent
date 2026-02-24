@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -225,12 +226,9 @@ def build_visual_evidence(
     if not api_key:
         return {"images": []}
 
-    client = OpenAI(api_key=api_key)
-    results: List[Dict[str, Any]] = []
-
-    cnt = 0
-    for image_path in site_images:
-        cnt += 1
+    def _worker(payload: tuple[int, str]) -> Optional[Dict[str, Any]]:
+        cnt, image_path = payload
+        client = OpenAI(api_key=api_key)
         evidence = _build_single_image_evidence(
             client=client,
             model=model,
@@ -241,6 +239,12 @@ def build_visual_evidence(
         )
         if evidence:
             evidence["image_id"] = str(cnt)
-            results.append(evidence)
+        return evidence
+
+    indexed_images = [(idx, image_path) for idx, image_path in enumerate(site_images, start=1)]
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        raw_results = list(executor.map(_worker, indexed_images))
+
+    results: List[Dict[str, Any]] = [item for item in raw_results if item]
 
     return {"images": results}
