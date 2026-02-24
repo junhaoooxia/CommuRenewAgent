@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .image_generation import edit_image_with_gemini_nanobanana
@@ -182,18 +183,49 @@ def generate_design_schemes(
 
     if generate_images:
         output_root = Path(image_output_dir)
+        tasks = []
         for scheme_idx, scheme in enumerate(generated.scheme_list, start=1):
             for scene_idx, scene in enumerate(scheme.node_scenes, start=1):
-                for src_idx, src in enumerate(_resolve_selected_site_image_paths(scene.selected_representative_images, perception.site_images), start=1):
+                resolved_sources = _resolve_selected_site_image_paths(scene.selected_representative_images, perception.site_images)
+                for src_idx, src in enumerate(resolved_sources, start=1):
                     out_path = output_root / f"scheme_{scheme_idx}" / f"scene_{scene_idx}_src_{src_idx}.png"
-                    edited = edit_image_with_gemini_nanobanana(
-                        prompt=scene.desired_image_prompt,
-                        source_image_path=src,
-                        output_path=out_path,
-                        model=image_model,
-                    )
+                    tasks.append((scheme, scene, scheme_idx, scene_idx, src, out_path))
+
+        logger.info("[app] image generation start. tasks=%s workers=10", len(tasks))
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_map = {
+                executor.submit(
+                    edit_image_with_gemini_nanobanana,
+                    prompt=scene.desired_image_prompt,
+                    source_image_path=src,
+                    output_path=out_path,
+                    model=image_model,
+                ): (scheme, scene, scheme_idx, scene_idx, src, out_path)
+                for scheme, scene, scheme_idx, scene_idx, src, out_path in tasks
+            }
+
+            for fut in as_completed(future_map):
+                scheme, scene, scheme_idx, scene_idx, src, out_path = future_map[fut]
+                try:
+                    edited = fut.result()
                     scene.generated_images.append(edited)
-                    logger.info("[app] generated image saved. scheme=%s scene=%s source=%s output=%s", scheme_idx, scene_idx, src, edited)
+                    logger.info(
+                        "[app] generated image saved. scheme=%s scene=%s source=%s output=%s",
+                        scheme_idx,
+                        scene_idx,
+                        src,
+                        edited,
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "[app] image generation failed. scheme=%s scene=%s source=%s output=%s err=%s",
+                        scheme_idx,
+                        scene_idx,
+                        src,
+                        out_path,
+                        exc,
+                    )
     # Return JSON-serializable retrieval payload for UI/debugging.
     retrieval_payload = {
         "retrieved_methods": [node.__dict__ for node in retrieval.retrieved_methods],

@@ -227,8 +227,10 @@ def build_visual_evidence(
         logger.info("[vision_evidence] no site images, skip evidence build.")
         return {"images": []}
 
+    logger.info("[vision_evidence] start building evidence. images=%s model=%s", len(site_images), model)
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
+        logger.warning("[vision_evidence] OPENAI_API_KEY missing, return empty evidence.")
         return {"images": []}
 
     def _worker(payload: tuple[int, str]) -> Optional[Dict[str, Any]]:

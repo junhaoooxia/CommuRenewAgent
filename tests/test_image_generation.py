@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 from commurenew_agent.image_generation import edit_image_with_gemini_nanobanana
 
 
@@ -17,6 +19,9 @@ class _FakeInlineData:
 class _FakePart:
     def __init__(self, inline_data=None):
         self.inline_data = inline_data
+
+    def as_image(self):
+        return Image.new("RGB", (10, 10), color=(255, 0, 0))
 
 
 class _FakeResponse:
@@ -49,8 +54,15 @@ class _FakeTypesPart:
 
 
 class _FakeGenerateContentConfig:
-    def __init__(self, response_modalities=None):
+    def __init__(self, response_modalities=None, image_config=None):
         self.response_modalities = response_modalities
+        self.image_config = image_config
+
+
+class _FakeImageConfig:
+    def __init__(self, image_size=None, aspect_ratio=None):
+        self.image_size = image_size
+        self.aspect_ratio = aspect_ratio
 
 
 class EditImageWithGeminiTest(unittest.TestCase):
@@ -59,6 +71,7 @@ class EditImageWithGeminiTest(unittest.TestCase):
         fake_types = types.SimpleNamespace(
             Part=_FakeTypesPart,
             GenerateContentConfig=_FakeGenerateContentConfig,
+            ImageConfig=_FakeImageConfig,
         )
 
         fake_google_pkg = types.ModuleType("google")
@@ -70,7 +83,7 @@ class EditImageWithGeminiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir) / "source.png"
             output = Path(tmpdir) / "result.png"
-            source.write_bytes(b"raw-source-image")
+            Image.new("RGB", (10, 10), color=(0, 255, 0)).save(source)
 
             with patch.dict(os.environ, {"GEMINI_API_KEY": "unit-test-key"}, clear=False), patch.dict(
                 "sys.modules",
@@ -87,7 +100,9 @@ class EditImageWithGeminiTest(unittest.TestCase):
 
             self.assertEqual(out_path, str(output))
             self.assertTrue(output.exists())
-            self.assertEqual(output.read_bytes(), b"fake-generated-image")
+            with Image.open(output) as merged:
+                self.assertEqual(merged.height, 10)
+                self.assertEqual(merged.width, 20)
 
 
 if __name__ == "__main__":

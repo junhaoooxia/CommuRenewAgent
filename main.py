@@ -14,20 +14,22 @@ def _setup_logger() -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-    logger = logging.getLogger("commurenew_agent.main")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
 
+    # Configure root logger so logs from all commurenew_agent modules land in the same log file.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+
+    logger = logging.getLogger("commurenew_agent.main")
     logger.info("Logger initialized. Log file: %s", log_file)
     return logger
 
