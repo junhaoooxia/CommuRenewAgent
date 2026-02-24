@@ -32,15 +32,29 @@ def _part_to_image(part) -> Image.Image | None:
     if not (getattr(part, "inline_data", None) and getattr(part.inline_data, "data", None)):
         return None
 
+    data = part.inline_data.data
+    if isinstance(data, (bytes, bytearray)):
+        image_bytes = bytes(data)
+    else:
+        image_bytes = base64.b64decode(data)
+
+    # Preferred path: decode inline bytes directly.
     try:
-        return part.as_image()
-    except Exception:
-        data = part.inline_data.data
-        if isinstance(data, (bytes, bytearray)):
-            image_bytes = bytes(data)
-        else:
-            image_bytes = base64.b64decode(data)
         return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        # Fallback for SDK variants/mocks where inline bytes are placeholders but
+        # `part.as_image()` returns a valid image object.
+        as_img = getattr(part, "as_image", None)
+        if callable(as_img):
+            obj = as_img()
+            if hasattr(obj, "save"):
+                if isinstance(obj, Image.Image):
+                    return obj.convert("RGB")
+                buf = io.BytesIO()
+                obj.save(buf, format="PNG")
+                buf.seek(0)
+                return Image.open(buf).convert("RGB")
+        raise
 
 
 def _concat_side_by_side(original_image: Image.Image, edited_image: Image.Image) -> Image.Image:
