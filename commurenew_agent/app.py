@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from .image_generation import edit_image_with_gemini_nanobanana
@@ -8,6 +10,46 @@ from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
 from .retrieval import rank_method_images_for_scene, rank_site_images_for_scene, retrieve_relevant_nodes
 from .vision_evidence import build_visual_evidence
+
+
+def _discover_site_images(default_dir: str | Path = "inputs/siteImgs") -> list[str]:
+    root = Path(default_dir)
+    if not root.exists():
+        return []
+    exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+    return [str(p) for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() in exts]
+
+
+def _site_images_signature(site_images: list[str]) -> str:
+    hasher = hashlib.sha256()
+    for img in site_images:
+        p = Path(img)
+        hasher.update(str(p.resolve()).encode("utf-8", errors="ignore"))
+        if p.exists():
+            stat = p.stat()
+            hasher.update(str(stat.st_size).encode("utf-8"))
+            hasher.update(str(stat.st_mtime_ns).encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def _load_visual_evidence_cache(cache_path: Path, signature: str) -> dict | None:
+    if not cache_path.exists():
+        return None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if payload.get("signature") == signature and isinstance(payload.get("visual_evidence"), dict):
+        return payload["visual_evidence"]
+    return None
+
+
+def _save_visual_evidence_cache(cache_path: Path, signature: str, visual_evidence: dict) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps({"signature": signature, "visual_evidence": visual_evidence}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def index_knowledge_base(
@@ -53,7 +95,21 @@ def generate_design_schemes(
     image_output_dir: str | Path = "data/generated_images",
 ) -> tuple[dict, GenerationOutput]:
     """主入口：如果 perception.visual_evidence 已存在则直接复用；否则基于 site_images 构建。"""
+    # Backward compatibility: if perception has no site_images attribute, auto discover default folder.
+    if not hasattr(perception, "site_images"):
+        setattr(perception, "site_images", _discover_site_images())
+    if not hasattr(perception, "visual_evidence"):
+        setattr(perception, "visual_evidence", {})
+
+    if not perception.site_images:
+        perception.site_images = _discover_site_images()
+
     if perception.site_images:
+        signature = _site_images_signature(perception.site_images)
+        cache_path = Path("output/visual_evidence_cache.json")
+        cached = _load_visual_evidence_cache(cache_path=cache_path, signature=signature)
+        if cached and not perception.visual_evidence:
+            perception.visual_evidence = cached
         perception.visual_evidence = build_visual_evidence(
             site_images=perception.site_images,
             existing=perception.visual_evidence,
@@ -61,6 +117,7 @@ def generate_design_schemes(
             district_name=perception.district_name,
             current_description=perception.current_description,
         )
+        _save_visual_evidence_cache(cache_path=cache_path, signature=signature, visual_evidence=perception.visual_evidence)
 
     # First stage: RAG retrieval conditioned on project perception input.
     retrieval = retrieve_relevant_nodes(
