@@ -8,7 +8,7 @@ from .image_generation import edit_image_with_gemini_nanobanana
 from .knowledge_ingestion import build_knowledge_base
 from .models import GenerationOutput, PerceptionInput
 from .reasoning import generate_schemes_with_reasoning
-from .retrieval import rank_method_images_for_scene, rank_site_images_for_scene, retrieve_relevant_nodes
+from .retrieval import rank_method_images_for_scene, retrieve_relevant_nodes
 from .vision_evidence import build_visual_evidence
 
 
@@ -64,17 +64,12 @@ def index_knowledge_base(
 
 
 
-def _post_rank_scene_images(generated: GenerationOutput, retrieval, perception: PerceptionInput, embedding_backend: str, db_path: str | Path) -> None:
-    # Stage-2 image recall: (1) node->site images from perception, (2) node->method images from retrieved method/strategy images.
+def _post_rank_scene_images(generated: GenerationOutput, retrieval, embedding_backend: str, db_path: str | Path) -> None:
+    # Stage-2 image recall: only populate method/strategy reference images.
+    # selected_representative_images are chosen by LLM in generate_schemes_with_reasoning from visual_evidence.
     for scheme in generated.scheme_list:
         for scene in scheme.node_scenes:
             scene_query = f"{scene.node_name}\n{scene.description}\n{scene.desired_image_prompt}"
-            scene.selected_representative_images = rank_site_images_for_scene(
-                scene_text=scene_query,
-                site_images=perception.site_images,
-                embedding_backend=embedding_backend,
-                top_k=2,
-            )
             scene.reference_example_images = rank_method_images_for_scene(
                 scene_text=scene_query,
                 retrieval=retrieval,
@@ -109,15 +104,17 @@ def generate_design_schemes(
         cache_path = Path("output/visual_evidence_cache.json")
         cached = _load_visual_evidence_cache(cache_path=cache_path, signature=signature)
         if cached and not perception.visual_evidence:
+            print("Reusing cached visual evidence based on site images signature.")
             perception.visual_evidence = cached
-        perception.visual_evidence = build_visual_evidence(
-            site_images=perception.site_images,
-            existing=perception.visual_evidence,
-            model=model,
-            district_name=perception.district_name,
-            current_description=perception.current_description,
-        )
-        _save_visual_evidence_cache(cache_path=cache_path, signature=signature, visual_evidence=perception.visual_evidence)
+        else:
+            perception.visual_evidence = build_visual_evidence(
+                site_images=perception.site_images,
+                existing=perception.visual_evidence,
+                model=model,
+                district_name=perception.district_name,
+                current_description=perception.current_description,
+            )
+            _save_visual_evidence_cache(cache_path=cache_path, signature=signature, visual_evidence=perception.visual_evidence)
 
     # First stage: RAG retrieval conditioned on project perception input.
     retrieval = retrieve_relevant_nodes(
@@ -128,7 +125,7 @@ def generate_design_schemes(
     )
     # Second stage: reasoning/generation over retrieved context.
     generated = generate_schemes_with_reasoning(perception=perception, retrieval=retrieval, model=model)
-    _post_rank_scene_images(generated, retrieval, perception, embedding_backend, db_path)
+    _post_rank_scene_images(generated, retrieval, embedding_backend, db_path)
 
     if generate_images:
         output_root = Path(image_output_dir)

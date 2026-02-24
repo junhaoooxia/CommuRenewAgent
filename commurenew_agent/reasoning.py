@@ -238,10 +238,10 @@ def _generate_single_scheme_with_openai(
             },
             {
                 "role": "user",
-                "content": _build_multimodal_user_input(prompt, perception.site_images),
+                "content": prompt,
             },
         ],
-        temperature=0.4,
+        temperature=0.8,
     )
     text = response.output_text
     parsed = SchemeSchema.model_validate_json(text)
