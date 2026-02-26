@@ -341,7 +341,8 @@ def plot_eval_radar_from_csv(
     angles = [n / float(N) * 2 * math.pi for n in range(N)]
     angles += angles[:1]
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), dpi=150, subplot_kw={"projection": "polar"})
+    scheme_colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7), dpi=150, subplot_kw={"projection": "polar"})
     if hasattr(axes, "ravel"):
         axes = list(axes.ravel())
     elif not isinstance(axes, (list, tuple)):
@@ -352,10 +353,10 @@ def plot_eval_radar_from_csv(
         ax.set_theta_offset(math.pi / 2)
         ax.set_theta_direction(-1)
         ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(display_labels, fontsize=10)
+        ax.set_xticklabels(display_labels, fontsize=14)
         ax.set_ylim(0, 5)
         ax.set_yticks([1, 2, 3, 4, 5])
-        ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=8)
+        ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=12)
         values = []
         for c in metric_cols:
             try:
@@ -363,17 +364,26 @@ def plot_eval_radar_from_csv(
             except Exception:
                 values.append(0.0)
         values += values[:1]
-        scheme_name = row.get("scheme_name", f"scheme_{i}")
-        display_name = str(scheme_name) if has_cjk_font else f"Scheme {i}"
-        ax.plot(angles, values, linewidth=2, label=display_name)
-        ax.fill(angles, values, alpha=0.08)
-        ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.15), fontsize=8)
-        ax.set_title(display_name, fontsize=12, pad=20)
+        color = scheme_colors[(i - 1) % len(scheme_colors)]
+        ax.plot(angles, values, linewidth=2.5, color=color)
+        ax.fill(angles, values, color=color, alpha=0.16)
+        ax.set_title(f"方案 {i}" if has_cjk_font else f"Scheme {i}", fontsize=18, pad=22)
+
+        for j, score in enumerate(values[:-1]):
+            angle = angles[j]
+            ax.text(
+                angle,
+                min(5.0, score + 0.18),
+                f"{score:.1f}",
+                fontsize=11,
+                ha="center",
+                va="center",
+                color=color,
+                fontweight="bold",
+            )
 
     for idx in range(min(len(rows), 3), 3):
         axes[idx].set_axis_off()
-    fig.suptitle("住区更新方案多维评分雷达图" if has_cjk_font else "Community Renewal Scheme Radar", fontsize=14)
-
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
