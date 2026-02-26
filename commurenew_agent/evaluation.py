@@ -24,10 +24,13 @@ PERSONA_GEN_TEMPLATE = """请你根据下面的这个问卷调研信息，帮我
 
 EVAL_USER_TEXT = (
     "请你作为上述居民用户，对当前输入的住区更新方案进行评价。"
+    "注意：你将看到的每张图片都是‘更新前+更新后’拼接图，左边是更新前，右边是更新后。"
     "请严格输出 JSON 对象，且必须包含五个维度："
     "建筑与居住条件、交通与基础设施、公共空间与绿化、环境与管理设施、综合满意度。"
     "每个维度下包含：评分(1-5整数) 和 原因(中文)。"
 )
+
+MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
 
 @dataclass
@@ -56,11 +59,50 @@ def _score_to_int(v: Any) -> int:
     return max(1, min(5, n))
 
 
+def _compress_image_to_target_bytes(path: Path, target_bytes: int = MAX_IMAGE_BYTES) -> bytes:
+    raw = path.read_bytes()
+    if len(raw) <= target_bytes:
+        return raw
+
+    try:
+        from PIL import Image
+    except Exception:
+        return raw
+
+    img = Image.open(path)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    quality = 90
+    scale = 1.0
+    for _ in range(10):
+        from io import BytesIO
+
+        buf = BytesIO()
+        working = img
+        if scale < 1.0:
+            w = max(1, int(img.width * scale))
+            h = max(1, int(img.height * scale))
+            working = img.resize((w, h), Image.Resampling.LANCZOS)
+        working.save(buf, format="JPEG", quality=max(30, quality), optimize=True)
+        data = buf.getvalue()
+        if len(data) <= target_bytes:
+            return data
+        quality -= 10
+        if quality < 40:
+            scale *= 0.85
+            quality = 85
+    return data
+
+
 def _image_to_data_url(path: Path) -> str | None:
     if not path.exists():
         return None
-    mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
-    return f"data:{mime_type};base64,{base64.b64encode(path.read_bytes()).decode('utf-8')}"
+    payload = _compress_image_to_target_bytes(path, target_bytes=MAX_IMAGE_BYTES)
+    mime_type = "image/jpeg"
+    if payload == path.read_bytes():
+        mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+    return f"data:{mime_type};base64,{base64.b64encode(payload).decode('utf-8')}"
 
 
 def _locate_survey_csv(path: str | Path | None = None) -> Path:
@@ -166,13 +208,11 @@ def _scheme_text_payload(scheme: dict[str, Any]) -> str:
         f"方案文本: {scheme.get('scheme_text', '')}",
         f"预期效果: {json.dumps(scheme.get('expected_effect', []), ensure_ascii=False)}",
         f"关键策略: {json.dumps(scheme.get('key_strategies', []), ensure_ascii=False)}",
-        f"参考方法ID: {json.dumps(scheme.get('referenced_methods', []), ensure_ascii=False)}",
     ]
     node_scenes = scheme.get("node_scenes", []) or []
     parts.append("节点信息:")
     for i, scene in enumerate(node_scenes, start=1):
         parts.append(f"- 节点{i}: {scene.get('node_name','')} | {scene.get('description','')}")
-        parts.append(f"  prompt: {scene.get('desired_image_prompt','')}")
     return "\n".join(parts)
 
 
@@ -213,7 +253,7 @@ def _evaluate_single(
                     {"role": "system", "content": [{"type": "input_text", "text": persona.system_prompt}]},
                     {"role": "user", "content": user_content},
                 ],
-                temperature=0.2,
+                temperature=0.8,
             )
             obj = _safe_json_parse(resp.output_text or "{}")
             normalized: dict[str, Any] = {}
@@ -385,3 +425,54 @@ def evaluate_result_json(
 
     logger.info("[evaluation] finished. summary=%s detail=%s radar=%s", csv_path, detail_path, radar_path)
     return csv_path
+
+
+def export_scores_from_detail_json(detail_json_path: str | Path, output_dir: str | Path = "output") -> tuple[Path, Path]:
+    detail_path = Path(detail_json_path)
+    details = json.loads(detail_path.read_text(encoding="utf-8"))
+    if not isinstance(details, list):
+        raise ValueError("detail json must be a list")
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+
+    detail_csv = out_dir / f"eval_scores_detail_{ts}.csv"
+    fieldnames = ["scheme_index", "scheme_name", "resident_id"] + SCORE_DIMENSIONS
+    with detail_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in details:
+            out = {
+                "scheme_index": row.get("scheme_index"),
+                "scheme_name": row.get("scheme_name"),
+                "resident_id": row.get("resident_id"),
+            }
+            scores = row.get("scores", {}) if isinstance(row.get("scores"), dict) else {}
+            for dim in SCORE_DIMENSIONS:
+                out[dim] = _score_to_int((scores.get(dim, {}) or {}).get("评分", 3))
+            writer.writerow(out)
+
+    grouped: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+    for row in details:
+        key = (row.get("scheme_index"), row.get("scheme_name"))
+        grouped.setdefault(key, []).append(row)
+
+    summary_csv = out_dir / f"eval_result_{ts}.csv"
+    summary_fields = ["scheme_index", "scheme_name", "respondent_count"] + [f"{d}_均分" for d in SCORE_DIMENSIONS]
+    with summary_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_fields)
+        writer.writeheader()
+        for (scheme_index, scheme_name), rows in sorted(grouped.items(), key=lambda x: x[0][0]):
+            out: dict[str, Any] = {
+                "scheme_index": scheme_index,
+                "scheme_name": scheme_name,
+                "respondent_count": len(rows),
+            }
+            for dim in SCORE_DIMENSIONS:
+                vals = [_score_to_int(((r.get("scores", {}) or {}).get(dim, {}) or {}).get("评分", 3)) for r in rows]
+                out[f"{dim}_均分"] = round(statistics.mean(vals), 4) if vals else ""
+            writer.writerow(out)
+
+    logger.info("[evaluation] exported detail scores csv=%s summary csv=%s", detail_csv, summary_csv)
+    return detail_csv, summary_csv
