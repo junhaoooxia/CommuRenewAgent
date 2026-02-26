@@ -14,8 +14,8 @@ from commurenew_agent.evaluation import evaluate_result_json, plot_eval_radar_fr
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate scheme results with resident personas")
-    parser.add_argument("--result", required=True, help="Path to output/result_*.json")
-    parser.add_argument("--survey-csv", default=None, help="Path to inputs/serveyData.csv (optional)")
+    parser.add_argument("--result", default="output\result_20260224_210002.json", help="Path to output/result_*.json")
+    parser.add_argument("--survey-csv", default="inputs/surveyData.csv", help="Path to inputs/serveyData.csv (optional)")
     parser.add_argument("--workers", type=int, default=10, help="Thread workers (default: 10)")
     parser.add_argument("--model", default="gpt-5.2", help="Evaluation model")
     parser.add_argument("--output-dir", default="output", help="Output directory")
