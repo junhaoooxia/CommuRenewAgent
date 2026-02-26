@@ -191,7 +191,7 @@ def generate_design_schemes(
             for scene_idx, scene in enumerate(scheme.node_scenes, start=1):
                 resolved_sources = _resolve_selected_site_image_paths(scene.selected_representative_images, perception.site_images)
                 for src_idx, src in enumerate(resolved_sources, start=1):
-                    out_path = output_root / f"scheme_{scheme_idx}" / f"scene_{scene_idx}_src_{src_idx}.png"
+                    out_path = output_root / f"scheme_{scheme_idx}" / f"scene_{scene_idx}_src_{src_idx}.jpg"
                     tasks.append((scheme, scene, scheme_idx, scene_idx, src, out_path))
 
         logger.info("[app] image generation start. tasks=%s workers=10", len(tasks))

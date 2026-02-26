@@ -220,7 +220,7 @@ if __name__ == "__main__":
     retrieval, output = generate_design_schemes(
         perception=perception,
         # Set to True after configuring GEMINI_API_KEY/GOOGLE_API_KEY for img2img outputs.
-        generate_images=False,
+        generate_images=True,
         image_output_dir="output",
         result_timestamp=result_timestamp,
     )
