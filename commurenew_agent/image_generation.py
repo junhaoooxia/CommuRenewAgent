@@ -56,6 +56,7 @@ def _revise_prompt_with_gpt52(source_image_path: Path, desired_image_prompt: str
     )
     user = (
         f"原始需求（来自上一阶段的空间组织描述）：{desired_image_prompt}\n\n"
+        "目前正在更新的小区名字为“逸成东苑”"
         "请在理解现场图片的基础上，将上述内容改写为一段可直接用于【在原照片基础上进行编辑】的真实可落地图生图/图改图中文 prompt。"
         "改写时请遵循以下要求：\n"
         f"- 必须遵守以下安全与合规约束：{PROMPT_GUARDRAIL}\n"
