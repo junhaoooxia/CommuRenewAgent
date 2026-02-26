@@ -353,10 +353,10 @@ def plot_eval_radar_from_csv(
         ax.set_theta_offset(math.pi / 2)
         ax.set_theta_direction(-1)
         ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(display_labels, fontsize=14)
+        ax.set_xticklabels(["建筑居住", "交通基建", "公共空间绿化", "环境管理", "综合满意度"], fontsize=16)
         ax.set_ylim(0, 5)
         ax.set_yticks([1, 2, 3, 4, 5])
-        ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=12)
+        ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=16)
         values = []
         for c in metric_cols:
             try:
@@ -371,16 +371,28 @@ def plot_eval_radar_from_csv(
 
         for j, score in enumerate(values[:-1]):
             angle = angles[j]
-            ax.text(
-                angle,
-                min(5.0, score + 0.18),
-                f"{score:.1f}",
-                fontsize=11,
-                ha="center",
-                va="center",
-                color=color,
-                fontweight="bold",
-            )
+            if j == 1:
+                ax.text(
+                    angle,
+                    min(5.0, score - 0.5),
+                    f"{score:.2f}",
+                    fontsize=14,
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontweight="bold",
+                )
+            else:
+                ax.text(
+                    angle,
+                    min(5.0, score + 0.4),
+                    f"{score:.2f}",
+                    fontsize=16,
+                    ha="center",
+                    va="top",
+                    color=color,
+                    fontweight="bold",
+                )
 
     for idx in range(min(len(rows), 3), 3):
         axes[idx].set_axis_off()

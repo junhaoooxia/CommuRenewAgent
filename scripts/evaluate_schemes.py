@@ -19,8 +19,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=10, help="Thread workers (default: 10)")
     parser.add_argument("--model", default="gpt-5.2", help="Evaluation model")
     parser.add_argument("--output-dir", default="output", help="Output directory")
-    parser.add_argument("--summary-csv", default="", help="Optional existing eval_result_*.csv to render radar directly")
-    parser.add_argument("--detail-json", default="", help="Optional existing eval_detail_*.json to export detail+summary CSV")
+    parser.add_argument("--summary-csv", default="output/eval_result_20260226_140000.csv", help="Optional existing eval_result_*.csv to render radar directly")
+    parser.add_argument("--detail-json", default="output/eval_detail_20260226_140000.json", help="Optional existing eval_detail_*.json to export detail+summary CSV")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
