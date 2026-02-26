@@ -231,6 +231,73 @@ def _evaluate_single(
     raise RuntimeError(f"evaluate failed: {last_exc}")
 
 
+
+def plot_eval_radar_from_csv(
+    summary_csv_path: str | Path,
+    output_dir: str | Path = "output",
+) -> Path:
+    """Draw radar chart for scheme-level average scores from eval_result CSV."""
+    csv_path = Path(summary_csv_path)
+    rows: list[dict[str, str]] = []
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
+        raise ValueError(f"No rows found in summary CSV: {csv_path}")
+
+    labels = SCORE_DIMENSIONS
+    metric_cols = [f"{d}_均分" for d in labels]
+    for col in metric_cols:
+        if col not in rows[0]:
+            raise ValueError(f"Missing score column in summary CSV: {col}")
+
+    import math
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    N = len(labels)
+    angles = [n / float(N) * 2 * math.pi for n in range(N)]
+    angles += angles[:1]
+
+    fig = plt.figure(figsize=(8, 8), dpi=150)
+    ax = plt.subplot(111, polar=True)
+    ax.set_theta_offset(math.pi / 2)
+    ax.set_theta_direction(-1)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylim(0, 5)
+    ax.set_yticks([1, 2, 3, 4, 5])
+    ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=8)
+
+    for i, row in enumerate(rows, start=1):
+        values = []
+        for c in metric_cols:
+            try:
+                values.append(float(row.get(c, 0) or 0))
+            except Exception:
+                values.append(0.0)
+        values += values[:1]
+        scheme_name = row.get("scheme_name", f"scheme_{i}")
+        ax.plot(angles, values, linewidth=2, label=scheme_name)
+        ax.fill(angles, values, alpha=0.08)
+
+    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.15), fontsize=8)
+    ax.set_title("住区更新方案多维评分雷达图", fontsize=12, pad=20)
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    png_path = out_dir / f"eval_radar_{ts}.png"
+    fig.tight_layout()
+    fig.savefig(png_path, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("[evaluation] radar chart saved: %s", png_path)
+    return png_path
+
+
 def evaluate_result_json(
     result_json_path: str | Path,
     survey_csv_path: str | Path | None = None,
@@ -314,5 +381,7 @@ def evaluate_result_json(
     detail_path = out_dir / f"eval_detail_{ts}.json"
     detail_path.write_text(json.dumps(details, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    logger.info("[evaluation] finished. summary=%s detail=%s", csv_path, detail_path)
+    radar_path = plot_eval_radar_from_csv(csv_path, output_dir=out_dir)
+
+    logger.info("[evaluation] finished. summary=%s detail=%s radar=%s", csv_path, detail_path, radar_path)
     return csv_path
