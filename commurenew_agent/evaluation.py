@@ -105,6 +105,36 @@ def _image_to_data_url(path: Path) -> str | None:
     return f"data:{mime_type};base64,{base64.b64encode(payload).decode('utf-8')}"
 
 
+def _configure_chinese_font(matplotlib_module: Any) -> bool:
+    """Configure a CJK-capable font if available to avoid missing glyph warnings."""
+    try:
+        from matplotlib import font_manager
+
+        preferred = [
+            "Noto Sans CJK SC",
+            "Noto Sans CJK",
+            "Source Han Sans SC",
+            "SimHei",
+            "Microsoft YaHei",
+            "PingFang SC",
+            "WenQuanYi Zen Hei",
+            "Arial Unicode MS",
+        ]
+        available = {f.name for f in font_manager.fontManager.ttflist}
+        for name in preferred:
+            if name in available:
+                matplotlib_module.rcParams["font.sans-serif"] = [name] + list(
+                    matplotlib_module.rcParams.get("font.sans-serif", [])
+                )
+                matplotlib_module.rcParams["axes.unicode_minus"] = False
+                return True
+        matplotlib_module.rcParams["axes.unicode_minus"] = False
+        return False
+    except Exception:
+        logger.warning("[evaluation] failed to configure chinese font; chart text may not render correctly")
+        return False
+
+
 def _locate_survey_csv(path: str | Path | None = None) -> Path:
     if path:
         p = Path(path)
@@ -298,21 +328,34 @@ def plot_eval_radar_from_csv(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    has_cjk_font = _configure_chinese_font(matplotlib)
+    display_labels = labels if has_cjk_font else [
+        "Building",
+        "Traffic",
+        "Public Space",
+        "Env & Mgmt",
+        "Overall",
+    ]
+
     N = len(labels)
     angles = [n / float(N) * 2 * math.pi for n in range(N)]
     angles += angles[:1]
 
-    fig = plt.figure(figsize=(8, 8), dpi=150)
-    ax = plt.subplot(111, polar=True)
-    ax.set_theta_offset(math.pi / 2)
-    ax.set_theta_direction(-1)
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=10)
-    ax.set_ylim(0, 5)
-    ax.set_yticks([1, 2, 3, 4, 5])
-    ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=8)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), dpi=150, subplot_kw={"projection": "polar"})
+    if hasattr(axes, "ravel"):
+        axes = list(axes.ravel())
+    elif not isinstance(axes, (list, tuple)):
+        axes = [axes]
 
-    for i, row in enumerate(rows, start=1):
+    for i, row in enumerate(rows[:3], start=1):
+        ax = axes[i - 1]
+        ax.set_theta_offset(math.pi / 2)
+        ax.set_theta_direction(-1)
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(display_labels, fontsize=10)
+        ax.set_ylim(0, 5)
+        ax.set_yticks([1, 2, 3, 4, 5])
+        ax.set_yticklabels(["1", "2", "3", "4", "5"], fontsize=8)
         values = []
         for c in metric_cols:
             try:
@@ -321,11 +364,15 @@ def plot_eval_radar_from_csv(
                 values.append(0.0)
         values += values[:1]
         scheme_name = row.get("scheme_name", f"scheme_{i}")
-        ax.plot(angles, values, linewidth=2, label=scheme_name)
+        display_name = str(scheme_name) if has_cjk_font else f"Scheme {i}"
+        ax.plot(angles, values, linewidth=2, label=display_name)
         ax.fill(angles, values, alpha=0.08)
+        ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.15), fontsize=8)
+        ax.set_title(display_name, fontsize=12, pad=20)
 
-    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.15), fontsize=8)
-    ax.set_title("住区更新方案多维评分雷达图", fontsize=12, pad=20)
+    for idx in range(min(len(rows), 3), 3):
+        axes[idx].set_axis_off()
+    fig.suptitle("住区更新方案多维评分雷达图" if has_cjk_font else "Community Renewal Scheme Radar", fontsize=14)
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -421,9 +468,30 @@ def evaluate_result_json(
     detail_path = out_dir / f"eval_detail_{ts}.json"
     detail_path.write_text(json.dumps(details, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    detail_csv_path = out_dir / f"eval_scores_detail_{ts}.csv"
+    detail_fieldnames = ["scheme_index", "scheme_name", "resident_id"] + SCORE_DIMENSIONS
+    with detail_csv_path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=detail_fieldnames)
+        writer.writeheader()
+        for row in sorted(details, key=lambda x: (x.get("scheme_index", 0), x.get("resident_id", ""))):
+            record = {
+                "scheme_index": row.get("scheme_index"),
+                "scheme_name": row.get("scheme_name"),
+                "resident_id": row.get("resident_id"),
+            }
+            for dim in SCORE_DIMENSIONS:
+                record[dim] = _score_to_int((((row.get("scores", {}) or {}).get(dim, {}) or {}).get("评分", 3)))
+            writer.writerow(record)
+
     radar_path = plot_eval_radar_from_csv(csv_path, output_dir=out_dir)
 
-    logger.info("[evaluation] finished. summary=%s detail=%s radar=%s", csv_path, detail_path, radar_path)
+    logger.info(
+        "[evaluation] finished. summary=%s detail_json=%s detail_csv=%s radar=%s",
+        csv_path,
+        detail_path,
+        detail_csv_path,
+        radar_path,
+    )
     return csv_path
 
 
