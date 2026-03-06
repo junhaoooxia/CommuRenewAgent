@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 SCHEME_FOCI = [
-    ("Scheme A - Public Space Vitality", "public space quality and social life"),
-    ("Scheme B - Mobility & Smart Logistics", "traffic organization and smart logistics"),
-    ("Scheme C - Interface Renewal & Activation", "building interface and frontage activation"),
+    # ("Scheme A - Public Space Vitality", "public space quality and social life"),
+    ("Scheme B - Mobility & Smart Logistics", "traffic organization and smart logistics. It is important to incorporate specific application scenarios of ground robots, unmanned vehicles and unmanned aircraft in the renewal of residential areas into the text of the plan and the prompts for image generation."),
+    # ("Scheme C - Interface Renewal & Activation", "building interface and frontage activation"),
 ]
 
 
